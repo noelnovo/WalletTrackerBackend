@@ -13,8 +13,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen \
-&& apk del gcc musl-dev build-base linux-headers
+RUN uv sync --frozen
 
 COPY . .
 
