@@ -1,4 +1,9 @@
+import os
 import pytest
+
+# Enable registration feature during tests (endpoints read from config at import time)
+os.environ.setdefault("ENABLE_REGISTER", "true")
+
 from app import create_app_test, db
 from utils.Cryptography import hash_password, generate_keys_file
 from utils.Logger import AppLogger
