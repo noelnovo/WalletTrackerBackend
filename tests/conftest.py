@@ -1,4 +1,27 @@
+import os
 import pytest
+
+# Enable registration feature during tests (endpoints read from config at import time)
+os.environ.setdefault("ENABLE_REGISTER", "true")
+
+# Ensure `werkzeug.__version__` exists in the test environment so Flask's
+# `test_client()` can build a default `User-Agent`. Some Werkzeug releases
+# no longer expose `__version__` as a module attribute; read it from
+# package metadata as a best-effort fallback.
+try:
+    import werkzeug
+    if not hasattr(werkzeug, "__version__"):
+        try:
+            import importlib.metadata as _md
+        except Exception:
+            _md = importlib.metadata
+        try:
+            werkzeug.__version__ = _md.version("werkzeug")
+        except Exception:
+            werkzeug.__version__ = "0"
+except Exception:
+    pass
+
 from app import create_app_test, db
 from utils.Cryptography import hash_password, generate_keys_file
 from utils.Logger import AppLogger
