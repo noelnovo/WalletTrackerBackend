@@ -2,7 +2,7 @@
 
 A REST API for tracking personal finances, built with Flask and deployed on a self-hosted infrastructure stack.
 
-The API handles authentication (JWT with RSA keys), expense categories, and expense tracking. It is designed for self-hosting and exposes endpoints through a Cloudflare tunnel. The Android client [WalletTracker](https://github.com/noelpatata/WalletTracker) consumes this API.
+The API handles authentication (JWT with RSA keys), expense categories, and expense tracking. It is designed for self-hosting and exposes endpoints through a Cloudflare tunnel. The Android client [WalletTracker](https://github.com/noelnovo/WalletTracker) consumes this API.
 
 ---
 
@@ -34,7 +34,7 @@ HashiCorp Vault: stores all secrets (Jenkins credentials, DB passwords, API toke
 | **Proxmox** | Hypervisor hosting the LXC containers for the API and database |
 | **Cloudflare** | Tunnel and DNS routing — exposes the API publicly without open ports |
 | **Bruno** | API collection for manual endpoint testing during development |
-| **[WalletTracker](https://github.com/noelpatata/WalletTracker)** | Android client app — consumes this API |
+| **[WalletTracker](https://github.com/noelnovo/WalletTracker)** | Android client app — consumes this API |
 
 ### CI/CD Flow
 
@@ -67,7 +67,7 @@ sudo apt install libmariadb-dev
 ### 1. Clone
 
 ```bash
-git clone https://github.com/noelpatata/WalletTrackerAPI.git && cd WalletTrackerAPI/
+git clone https://github.com/noelnovo/WalletTrackerAPI.git && cd WalletTrackerAPI/
 ```
 
 ### 2. Python virtual environment

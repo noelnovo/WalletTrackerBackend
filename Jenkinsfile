@@ -10,7 +10,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: "${params.GIT_BRANCH}", url: 'https://github.com/noelpatata/WalletTrackerBackend.git'
+                git branch: "${params.GIT_BRANCH}", url: 'https://github.com/noelnovo/WalletTrackerBackend.git'
             }
         }
         stage('Vault dependent Stages') {
