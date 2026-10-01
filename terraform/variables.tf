@@ -31,7 +31,7 @@ variable "vault_kv_app_common_secret_path" {
 variable "proxmox_ip" {
   description = "Proxmox IP address"
   type        = string
-  default     = "192.168.0.20"
+  default     = "proxmox.internal"
 }
 variable "proxmox_port" {
   description = "Proxmox port number"

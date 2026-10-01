@@ -44,7 +44,7 @@ pipeline {
                         // sh uses 'set -e': if push fails the build stops and rmi is skipped.
                         // REGISTRY must be a bare hostname (registry.downops.win), no https://, no trailing path.
                         def registryHost = env.REGISTRY.replaceFirst(/^https?:\/\//, '').replaceAll(/\/.*/, '')
-                        def image = "${registryHost}/wallettracker/wallet-tracker:${params.IMAGE_VERSION}"
+                        def image = "${registryHost}/wallettracker/backend:${params.IMAGE_VERSION}"
                         sh """
                             docker build -t ${image} ./app
                             echo "\$DOCKER_PASSWORD" | docker login ${registryHost} -u "\$DOCKER_USERNAME" --password-stdin
