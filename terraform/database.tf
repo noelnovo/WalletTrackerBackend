@@ -60,7 +60,7 @@ resource "proxmox_lxc" "mariadb" {
   network {
     name   = "eth0"
     bridge = var.bridge_name
-    gw     = "192.168.0.1"
+    gw     = "10.2.0.1"
     ip     = "${var.db_container_ip}/24"
   }
   mountpoint {

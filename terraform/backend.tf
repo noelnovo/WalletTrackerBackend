@@ -47,7 +47,7 @@ resource "proxmox_lxc" "api" {
   network {
     name   = "eth0"
     bridge = var.bridge_name
-    gw     = "192.168.0.1"
+    gw     = "10.2.0.1"
     ip     = "${var.api_container_ip}/24"
   }
   start = true

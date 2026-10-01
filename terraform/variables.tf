@@ -51,10 +51,10 @@ variable "bridge_name" {
 variable "api_container_ip" {
   description = "API container IP address"
   type        = string
-  default     = "192.168.0.18"
+  default     = "10.2.0.201"
 }
 variable "db_container_ip" {
   description = "MariaDB container IP address"
   type        = string
-  default     = "192.168.0.19"
+  default     = "10.2.0.202"
 }
