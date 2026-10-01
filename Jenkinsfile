@@ -1,5 +1,8 @@
 pipeline {
     agent any
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
     parameters {
         string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Branch to build')
         string(name: 'IMAGE_VERSION', defaultValue: 'latest', description: 'Docker image version tag')
@@ -37,10 +40,15 @@ pipeline {
                             ]
                         ]
                     ) {
-                        // Push to wallet tracker image to registry.
-                        sh 'echo "${DOCKER_PASSWORD}" | docker login ${REGISTRY} -u "${DOCKER_USERNAME}" --password-stdin' +
-                           ' && docker push ${REGISTRY}/wallet-tracker:' + params.IMAGE_VERSION +
-                           ' && docker logout ${REGISTRY}'
+                        // Push wallet tracker image to registry, then remove local copy to free disk space.
+                        // sh uses 'set -e': if push fails the build stops and rmi is skipped.
+                        def image = "${env.REGISTRY}/wallet-tracker:${params.IMAGE_VERSION}"
+                        sh """
+                            echo "\$DOCKER_PASSWORD" | docker login \$REGISTRY -u "\$DOCKER_USERNAME" --password-stdin
+                            docker push ${image}
+                            docker rmi ${image}
+                            docker logout \$REGISTRY
+                        """
 
                         // run Terraform deployment to Proxmox
                         dir('terraform') {
