@@ -42,12 +42,15 @@ pipeline {
                     ) {
                         // Push wallet tracker image to registry, then remove local copy to free disk space.
                         // sh uses 'set -e': if push fails the build stops and rmi is skipped.
-                        def image = "${env.REGISTRY}/wallet-tracker:${params.IMAGE_VERSION}"
+                        // REGISTRY must be a bare hostname (registry.downops.win), no https://, no trailing path.
+                        def registryHost = env.REGISTRY.replaceFirst(/^https?:\/\//, '').replaceAll(/\/.*/, '')
+                        def image = "${registryHost}/wallettracker/wallet-tracker:${params.IMAGE_VERSION}"
                         sh """
-                            echo "\$DOCKER_PASSWORD" | docker login \$REGISTRY -u "\$DOCKER_USERNAME" --password-stdin
+                            docker build -t ${image} ./app
+                            echo "\$DOCKER_PASSWORD" | docker login ${registryHost} -u "\$DOCKER_USERNAME" --password-stdin
                             docker push ${image}
                             docker rmi ${image}
-                            docker logout \$REGISTRY
+                            docker logout ${registryHost}
                         """
 
                         // run Terraform deployment to Proxmox
