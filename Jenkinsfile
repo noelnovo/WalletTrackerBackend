@@ -41,26 +41,22 @@ pipeline {
                         ]
                     ) {
                         // Push wallet tracker image to registry, then remove local copy to free disk space.
-                        // Use shell environment variables instead of Groovy string interpolation so the
-                        // registry hostname and image value are not exposed in the Jenkins command log.
+                        // Keep all sensitive values in shell environment only; do not read or interpolate
+                        // Vault-provided secrets in Groovy before the shell executes.
                         // REGISTRY must be a bare hostname (registry.downops.win), no https://, no trailing path.
-                        def registryHost = env.REGISTRY.replaceFirst(/^https?:\/\//, '').replaceAll(/\/.*/, '')
-                        def imageTag = "${params.IMAGE_VERSION}"
+                        sh '''
+                            set -euo pipefail
 
-                        withEnv([
-                            "REGISTRY_HOST=${registryHost}",
-                            "IMAGE_TAG=${imageTag}",
-                            "IMAGE_NAME=${registryHost}/wallettracker/backend:${imageTag}"
-                        ]) {
-                            sh '''
-                                set -euo pipefail
-                                docker build -t "$IMAGE_NAME" ./app
-                                echo "$DOCKER_PASSWORD" | docker login "$REGISTRY_HOST" -u "$DOCKER_USERNAME" --password-stdin
-                                docker push "$IMAGE_NAME"
-                                docker rmi "$IMAGE_NAME"
-                                docker logout "$REGISTRY_HOST"
-                            '''
-                        }
+                            REGISTRY_HOST="${REGISTRY#https://}"
+                            REGISTRY_HOST="${REGISTRY_HOST%%/*}"
+                            IMAGE_NAME="${REGISTRY_HOST}/wallettracker/backend:${IMAGE_VERSION}"
+
+                            docker build -t "$IMAGE_NAME" ./app
+                            echo "$DOCKER_PASSWORD" | docker login "$REGISTRY_HOST" -u "$DOCKER_USERNAME" --password-stdin
+                            docker push "$IMAGE_NAME"
+                            docker rmi "$IMAGE_NAME"
+                            docker logout "$REGISTRY_HOST"
+                        '''
 
                         // run Terraform deployment to Proxmox
                         dir('terraform') {

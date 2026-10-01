@@ -41,7 +41,7 @@ provider "cloudflare" {
 
 provider "proxmox" {
   pm_api_url      = "https://${var.proxmox_ip}:${var.proxmox_port}/api2/json"
-  pm_user         = "${data.vault_kv_secret_v2.common.data["PROXMOX_USER"]}@pve"
+  pm_user         = "${data.vault_kv_secret_v2.common.data["PROXMOX_USER"]}@pam"
   pm_password     = data.vault_kv_secret_v2.common.data["PROXMOX_PASSWORD"]
   pm_tls_insecure = true
 }
