@@ -4,20 +4,52 @@ variable "api_public_hostname" {
   default     = "api.downops.win"
 }
 
+locals {
+  cloudflare_tunnel_name = "wallettracker-api"
+  api_tunnel_id = try(cloudflare_zero_trust_tunnel_cloudflared.api[0].id, data.external.cloudflare_tunnel_api_exists.result.tunnel_id)
+}
+
+data "external" "cloudflare_tunnel_api_exists" {
+  program = [
+    "bash", "-lc",
+    <<-EOT
+      set -euo pipefail
+      account_id='${data.vault_kv_secret_v2.common.data["CLOUDFLARE_ACCOUNT_ID"]}'
+      token='${data.vault_kv_secret_v2.common.data["CLOUDFLARE_API_TOKEN"]}'
+
+      if [ -z "$account_id" ] || [ -z "$token" ]; then
+        echo '{"exists":"false","tunnel_id":""}'
+        exit 0
+      fi
+
+      response=$(curl -fsS \
+        -H "Authorization: Bearer $token" \
+        -H "Content-Type: application/json" \
+        "https://api.cloudflare.com/client/v4/accounts/$account_id/cfd_tunnel")
+
+      exists=$(printf '%s' "$response" | python3 -c 'import json,sys; data=json.load(sys.stdin); print("true" if any(item.get("name") == "wallettracker-api" for item in data.get("result", [])) else "false")')
+      tunnel_id=$(printf '%s' "$response" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next((item.get("id", "") for item in data.get("result", []) if item.get("name") == "wallettracker-api"), ""))')
+
+      printf '{"exists":"%s","tunnel_id":"%s"}\n' "$exists" "$tunnel_id"
+    EOT
+  ]
+}
+
 resource "cloudflare_zero_trust_tunnel_cloudflared" "api" {
+  count      = data.external.cloudflare_tunnel_api_exists.result.exists == "true" ? 0 : 1
   account_id = data.vault_kv_secret_v2.common.data["CLOUDFLARE_ACCOUNT_ID"]
-  name       = "wallettracker-api"
+  name       = local.cloudflare_tunnel_name
   depends_on = [null_resource.deploy_api]
 }
 
 data "cloudflare_zero_trust_tunnel_cloudflared_token" "api" {
   account_id = data.vault_kv_secret_v2.common.data["CLOUDFLARE_ACCOUNT_ID"]
-  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.api.id
+  tunnel_id  = local.api_tunnel_id
 }
 
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
   account_id = data.vault_kv_secret_v2.common.data["CLOUDFLARE_ACCOUNT_ID"]
-  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.api.id
+  tunnel_id  = local.api_tunnel_id
 
   config = {
     ingress = [
@@ -35,7 +67,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
 resource "cloudflare_dns_record" "api" {
   zone_id = data.vault_kv_secret_v2.app.data["CLOUDFLARE_ZONE_ID"]
   name    = "api"
-  content = "${cloudflare_zero_trust_tunnel_cloudflared.api.id}.cfargotunnel.com"
+  content = "${local.api_tunnel_id}.cfargotunnel.com"
   type    = "CNAME"
   ttl     = 1
   proxied = true
@@ -62,6 +94,7 @@ resource "null_resource" "setup_cloudflared" {
       command="/usr/bin/cloudflared"
       command_args="tunnel run --token ${data.cloudflare_zero_trust_tunnel_cloudflared_token.api.token}"
       command_background=true
+      supervise_daemon="yes"
       pidfile="/run/cloudflared.pid"
       output_log="/var/log/cloudflared.log"
       error_log="/var/log/cloudflared.log"
