@@ -117,7 +117,8 @@ resource "null_resource" "deploy_api" {
     inline = [
       <<-EOF
       set -ex
-      pct exec ${local.api_vmid} -- git -C ${local.repo_path} pull
+      pct exec ${local.api_vmid} -- git -C ${local.repo_path} fetch origin
+      pct exec ${local.api_vmid} -- git -C ${local.repo_path} reset --hard @{u}
 
       pct exec ${local.api_vmid} -- uv sync --no-dev --no-install-project --project ${local.repo_path}/app
 
