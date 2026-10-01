@@ -30,12 +30,12 @@ pipeline {
                         // vault secrets fetching
                         vaultSecrets: [
                             [
-                                path: "downops/common",
+                                path: "downops/wallettracker.backend",
                                 engineVersion: 2,
                                 secretValues: [
-                                    [envVar: 'REGISTRY',        vaultKey: 'REGISTRY_IP'],
-                                    [envVar: 'DOCKER_USERNAME', vaultKey: 'REGISTRY_USER'],
-                                    [envVar: 'DOCKER_PASSWORD', vaultKey: 'REGISTRY_PASSWORD']
+                                    [envVar: 'REGISTRY',        vaultKey: 'HARBOR_HOSTNAME'],
+                                    [envVar: 'DOCKER_USERNAME', vaultKey: 'HARBOR_ROBOT_NAME'],
+                                    [envVar: 'DOCKER_PASSWORD', vaultKey: 'HARBOR_ROBOT_SECRET']
                                 ]
                             ]
                         ]
