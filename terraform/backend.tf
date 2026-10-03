@@ -62,8 +62,8 @@ resource "null_resource" "setup_api_in_container" {
   connection {
     type     = "ssh"
     host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.common.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.common.data["PROXMOX_PASSWORD"]
+    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
   }
 
   provisioner "file" {
@@ -109,8 +109,8 @@ resource "null_resource" "deploy_api" {
   connection {
     type     = "ssh"
     host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.common.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.common.data["PROXMOX_PASSWORD"]
+    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
   }
 
   provisioner "remote-exec" {

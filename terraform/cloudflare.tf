@@ -14,8 +14,8 @@ data "external" "cloudflare_tunnel_api_exists" {
     "bash", "-lc",
     <<-EOT
       set -euo pipefail
-      account_id='${data.vault_kv_secret_v2.common.data["CLOUDFLARE_ACCOUNT_ID"]}'
-      token='${data.vault_kv_secret_v2.common.data["CLOUDFLARE_API_TOKEN"]}'
+      account_id='${data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_ACCOUNT_ID"]}'
+      token='${data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_API_TOKEN"]}'
 
       if [ -z "$account_id" ] || [ -z "$token" ]; then
         echo '{"exists":"false","tunnel_id":""}'
@@ -37,18 +37,18 @@ data "external" "cloudflare_tunnel_api_exists" {
 
 resource "cloudflare_zero_trust_tunnel_cloudflared" "api" {
   count      = data.external.cloudflare_tunnel_api_exists.result.exists == "true" ? 0 : 1
-  account_id = data.vault_kv_secret_v2.common.data["CLOUDFLARE_ACCOUNT_ID"]
+  account_id = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_ACCOUNT_ID"]
   name       = local.cloudflare_tunnel_name
   depends_on = [null_resource.deploy_api]
 }
 
 data "cloudflare_zero_trust_tunnel_cloudflared_token" "api" {
-  account_id = data.vault_kv_secret_v2.common.data["CLOUDFLARE_ACCOUNT_ID"]
+  account_id = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_ACCOUNT_ID"]
   tunnel_id  = local.api_tunnel_id
 }
 
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
-  account_id = data.vault_kv_secret_v2.common.data["CLOUDFLARE_ACCOUNT_ID"]
+  account_id = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_ACCOUNT_ID"]
   tunnel_id  = local.api_tunnel_id
 
   config = {
@@ -82,8 +82,8 @@ resource "null_resource" "setup_cloudflared" {
   connection {
     type     = "ssh"
     host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.common.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.common.data["PROXMOX_PASSWORD"]
+    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
   }
 
   provisioner "file" {

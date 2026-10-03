@@ -20,9 +20,14 @@ provider "vault" {
   skip_child_token  = true
 }
 
-data "vault_kv_secret_v2" "common" {
+data "vault_kv_secret_v2" "proxmox" {
   mount = var.vault_kv_mount
-  name  = var.vault_kv_common_secret_path
+  name  = var.vault_kv_proxmox_secret_path
+}
+
+data "vault_kv_secret_v2" "cloudflare" {
+  mount = var.vault_kv_mount
+  name  = var.vault_kv_cloudflare_secret_path
 }
 
 data "vault_kv_secret_v2" "app" {
@@ -36,12 +41,12 @@ data "vault_kv_secret_v2" "app_common" {
 }
 
 provider "cloudflare" {
-  api_token = data.vault_kv_secret_v2.common.data["CLOUDFLARE_API_TOKEN"]
+  api_token = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_API_TOKEN"]
 }
 
 provider "proxmox" {
   pm_api_url      = "https://${var.proxmox_ip}:${var.proxmox_port}/api2/json"
-  pm_user         = "${data.vault_kv_secret_v2.common.data["PROXMOX_USER"]}@pam"
-  pm_password     = data.vault_kv_secret_v2.common.data["PROXMOX_PASSWORD"]
+  pm_user         = "${data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]}@pam"
+  pm_password     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
   pm_tls_insecure = true
 }
