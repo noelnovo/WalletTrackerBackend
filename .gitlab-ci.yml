@@ -12,7 +12,8 @@ trigger-jenkins:
     - if: '$CI_COMMIT_BRANCH == "main"'
   script:
     - |
-      curl -u "$JENKINS_USERNAME:$JENKINS_API_TOKEN" \
-        "https://$JENKINS_HOSTNAME/generic-webhook-trigger/invoke?origin=gitlab" \
+      curl -sS -u "$JENKINS_USERNAME:$JENKINS_API_TOKEN" \
+        "https://$JENKINS_HOSTNAME/generic-webhook-trigger/invoke" \
         -H "Authorization: Bearer $JENKINS_CD_SECRET" \
-        --data-urlencode "GIT_BRANCH=$CI_COMMIT_BRANCH&IMAGE_VERSION=latest"
+        -H "Content-Type: application/json" \
+        -d "{\"origin\":\"gitlab\",\"GIT_BRANCH\":\"$CI_COMMIT_BRANCH\",\"IMAGE_VERSION\":\"latest\"}"
