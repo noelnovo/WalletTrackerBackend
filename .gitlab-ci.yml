@@ -1,0 +1,18 @@
+stages:
+  - deploy
+
+# Mirrors .github/workflows/cd.yml: triggers the Jenkins Wallet Tracker CD job
+# with origin=gitlab. When GitHub is available the Jenkins shared-library gate
+# ignores this trigger to avoid a duplicate build; when GitHub is down, this is
+# the only trigger that fires and the pipeline runs.
+trigger-jenkins:
+  stage: deploy
+  image: curlimages/curl:latest
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - |
+      curl -u "$JENKINS_USERNAME:$JENKINS_API_TOKEN" \
+        "https://$JENKINS_HOSTNAME/generic-webhook-trigger/invoke?origin=gitlab" \
+        -H "Authorization: Bearer $JENKINS_CD_SECRET" \
+        --data-urlencode "GIT_BRANCH=$CI_COMMIT_BRANCH&IMAGE_VERSION=latest"

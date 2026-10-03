@@ -1,3 +1,5 @@
+@Library('wallet-failover') _
+
 pipeline {
     agent any
     options {
@@ -6,17 +8,31 @@ pipeline {
     parameters {
         string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Branch to build')
         string(name: 'IMAGE_VERSION', defaultValue: 'latest', description: 'Docker image version tag')
+        string(name: 'PIPELINE_ORIGIN', defaultValue: 'github', description: 'Trigger origin: github|gitlab')
     }
     environment {
         VAULT_ADDR = credentials('vault-addr')
     }
     stages {
+        // GitHub-primary failover gate (shared library):
+        //  - GitHub available   -> run only the github-triggered build (gitlab trigger ignored)
+        //  - GitHub unavailable -> run the gitlab-triggered build
+        stage('Failover gate') {
+            steps {
+                script {
+                    def origin = env.origin ?: params.PIPELINE_ORIGIN ?: 'github'
+                    runPipelineWithFailover(origin: origin)
+                }
+            }
+        }
         stage('Checkout') {
+            when { expression { env.FAILOVER_RUN == 'true' } }
             steps {
                 git branch: "${params.GIT_BRANCH}", url: 'https://github.com/noelnovo/WalletTrackerBackend.git'
             }
         }
         stage('Vault dependent Stages') {
+            when { expression { env.FAILOVER_RUN == 'true' } }
             steps {
                 script {
                     // vault token fetching
@@ -43,7 +59,6 @@ pipeline {
                         // Push wallet tracker image to registry, then remove local copy to free disk space.
                         // Keep all sensitive values in shell environment only; do not read or interpolate
                         // Vault-provided secrets in Groovy before the shell executes.
-                        // REGISTRY must be a bare hostname (registry.downops.win), no https://, no trailing path.
                         sh '''
                             set -euo pipefail
 
