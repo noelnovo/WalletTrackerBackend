@@ -67,7 +67,7 @@ sudo apt install libmariadb-dev
 ### 1. Clone
 
 ```bash
-git clone https://github.com/noelnovo/WalletTrackerAPI.git && cd WalletTrackerAPI/
+git clone https://github.com/noelnovo/WalletTrackerBackend.git && cd WalletTrackerBackend/
 ```
 
 ### 2. Python virtual environment
