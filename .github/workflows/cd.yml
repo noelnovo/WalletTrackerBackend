@@ -38,7 +38,8 @@ jobs:
         env:
           GIT_BRANCH: main
         run: |
-          curl -u "${{ env.JENKINS_USERNAME }}:${{ env.JENKINS_API_TOKEN }}" \
-          "https://${{ env.JENKINS_HOSTNAME }}/generic-webhook-trigger/invoke?origin=github" \
+          curl -sS -u "${{ env.JENKINS_USERNAME }}:${{ env.JENKINS_API_TOKEN }}" \
+          "https://${{ env.JENKINS_HOSTNAME }}/generic-webhook-trigger/invoke" \
           -H "Authorization: Bearer ${{ env.JENKINS_CD_SECRET }}" \
-          --data-urlencode "GIT_BRANCH=$GIT_BRANCH&IMAGE_VERSION=latest"
+          -H "Content-Type: application/json" \
+          -d "{\"origin\":\"github\",\"GIT_BRANCH\":\"$GIT_BRANCH\",\"IMAGE_VERSION\":\"latest\"}"
