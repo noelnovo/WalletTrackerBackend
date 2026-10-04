@@ -53,7 +53,7 @@ pipeline {
 
                             REGISTRY_HOST="${REGISTRY#https://}"
                             REGISTRY_HOST="${REGISTRY_HOST%%/*}"
-                            IMAGE_NAME="${REGISTRY_HOST}/wallettracker/backend:${IMAGE_VERSION}"
+                            IMAGE_NAME="${REGISTRY_HOST}/downops/wallettracker-backend:${IMAGE_VERSION}"
 
                             docker build -t "$IMAGE_NAME" ./app
                             echo "$DOCKER_PASSWORD" | docker login "$REGISTRY_HOST" -u "$DOCKER_USERNAME" --password-stdin
