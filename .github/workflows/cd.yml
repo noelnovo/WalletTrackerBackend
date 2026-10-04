@@ -33,13 +33,58 @@ jobs:
             downops/data/wallettracker.backend JENKINS_CD_SECRET ;
             downops/data/jenkins JENKINS_USERNAME
 
-      - name: Trigger Jenkins Wallet Tracker CD
+      - name: Trigger Jenkins Wallet Tracker CD and wait for result
         if: steps.check-label.outputs.skip != 'true'
         env:
           GIT_BRANCH: main
+          CORRELATION_ID: ${{ github.run_id }}-${{ github.sha }}
         run: |
-          curl -sS -u "${{ env.JENKINS_USERNAME }}:${{ env.JENKINS_API_TOKEN }}" \
-          "https://${{ env.JENKINS_HOSTNAME }}/generic-webhook-trigger/invoke" \
-          -H "Authorization: Bearer ${{ env.JENKINS_CD_SECRET }}" \
-          -H "Content-Type: application/json" \
-          -d "{\"origin\":\"github\",\"GIT_BRANCH\":\"$GIT_BRANCH\",\"IMAGE_VERSION\":\"latest\"}"
+          set -euo pipefail
+          JENKINS_JOB="wallettracker_cd"
+          BASE="https://${{ env.JENKINS_HOSTNAME }}"
+          AUTH="${{ env.JENKINS_USERNAME }}:${{ env.JENKINS_API_TOKEN }}"
+          TIMEOUT_SECONDS=1800
+          DEADLINE=$(( $(date +%s) + TIMEOUT_SECONDS ))
+
+          curl -sS -u "$AUTH" "$BASE/generic-webhook-trigger/invoke" \
+            -H "Authorization: Bearer ${{ env.JENKINS_CD_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"origin\":\"github\",\"GIT_BRANCH\":\"$GIT_BRANCH\",\"IMAGE_VERSION\":\"latest\",\"CORRELATION_ID\":\"$CORRELATION_ID\"}"
+          echo "Triggered Jenkins CD with correlation id $CORRELATION_ID, waiting for build..."
+
+          # Builds run serialized (disableConcurrentBuilds in the Jenkinsfile), so
+          # attribute by the correlation id the Jenkinsfile echoes into the console log.
+          START_MS=$(( $(date +%s) * 1000 - 120000 ))
+          BUILD_NUMBER=""
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            sleep 20
+            NUMBERS=$(curl -sS -u "$AUTH" "$BASE/job/$JENKINS_JOB/api/json?tree=builds[number,timestamp]" \
+              | jq -r ".builds[] | select(.timestamp >= $START_MS) | .number") || continue
+            for n in $NUMBERS; do
+              if curl -sS -u "$AUTH" "$BASE/job/$JENKINS_JOB/$n/consoleText" | grep -q "$CORRELATION_ID"; then
+                BUILD_NUMBER=$n
+                break 2
+              fi
+            done
+          done
+          if [ -z "$BUILD_NUMBER" ]; then
+            echo "Timed out waiting for a Jenkins build with correlation id $CORRELATION_ID"
+            exit 1
+          fi
+          echo "Matched Jenkins build #$BUILD_NUMBER, waiting for it to finish..."
+
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            sleep 20
+            INFO=$(curl -sS -u "$AUTH" "$BASE/job/$JENKINS_JOB/$BUILD_NUMBER/api/json?tree=result,building")
+            if [ "$(echo "$INFO" | jq -r .building)" = "false" ]; then
+              RESULT=$(echo "$INFO" | jq -r .result)
+              echo "Jenkins build #$BUILD_NUMBER finished: $RESULT"
+              if [ "$RESULT" = "SUCCESS" ]; then
+                exit 0
+              else
+                exit 1
+              fi
+            fi
+          done
+          echo "Timed out waiting for Jenkins build #$BUILD_NUMBER to finish"
+          exit 1
