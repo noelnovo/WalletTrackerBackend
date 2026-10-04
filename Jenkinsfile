@@ -18,10 +18,6 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                // Correlation id posted by the GitHub CD trigger. cd.yml polls the
-                // console log for it to attribute this build to its workflow run
-                // and reflect the Jenkins result on the GitHub check.
-                echo "CD correlation id: ${env.CORRELATION_ID}"
                 git branch: "${params.GIT_BRANCH}", url: 'https://github.com/noelnovo/WalletTrackerBackend.git'
             }
         }
