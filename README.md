@@ -16,7 +16,7 @@ GitHub ──► GitHub Actions ──► Jenkins ──► Proxmox (Docker cont
                                                     MariaDB (port 3306)
 
 Terraform manages: Proxmox VMs/containers, Cloudflare DNS, Vault secrets
-HashiCorp Vault: stores all secrets (Jenkins credentials, DB passwords, API tokens).
+HashiCorp Vault: stores all secrets (Jenkins credentials, DB passwords, API tokens)
 ```
 
 ### Components
