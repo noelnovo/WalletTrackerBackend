@@ -38,9 +38,15 @@ pipeline {
                                 path: "downops/wallettracker.backend",
                                 engineVersion: 2,
                                 secretValues: [
-                                    [envVar: 'REGISTRY',        vaultKey: 'HARBOR_HOSTNAME'],
                                     [envVar: 'DOCKER_USERNAME', vaultKey: 'HARBOR_ROBOT_NAME'],
                                     [envVar: 'DOCKER_PASSWORD', vaultKey: 'HARBOR_ROBOT_SECRET']
+                                ]
+                            ],
+                            [
+                                path: "downops/harbor.urls",
+                                engineVersion: 2,
+                                secretValues: [
+                                    [envVar: 'REGISTRY', vaultKey: 'HARBOR_INTERNAL_URL']
                                 ]
                             ]
                         ]
