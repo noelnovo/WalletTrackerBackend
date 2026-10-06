@@ -5,8 +5,38 @@ on:
     branches: [main]
 
 jobs:
+  lockfile-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Enforce that app/uv.lock matches app/pyproject.toml. This job is
+      # meant to be a required branch-protection check: it blocks merging
+      # when the lock is stale, so developers get a clear message instead
+      # of a confusing Docker/SBOM failure downstream.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Verify uv.lock is in sync
+        run: |
+          cd app
+          if uv lock --check; then
+            echo "uv.lock is in sync with pyproject.toml."
+          else
+            echo "::error::app/uv.lock is out of sync with app/pyproject.toml."
+            echo "::error::Regenerate it locally and commit both files:"
+            echo "::error::  git checkout ${{ github.head_ref }}"
+            echo "::error::  cd app && uv lock"
+            echo "::error::  git add pyproject.toml uv.lock && git commit -m \"Regenerate lock\" && git push"
+            exit 1
+          fi
+
   python-tests:
     runs-on: ubuntu-latest
+    needs: [lockfile-check]
 
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +76,11 @@ jobs:
     needs: [python-tests]
 
     steps:
+      # Check out the PR HEAD commit explicitly so the SBOM below reflects
+      # exactly the dependencies being merged, not the base branch.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -65,10 +99,27 @@ jobs:
             downops/data/wallettracker.backend DT_PROJECT_UUID ;
             downops/data/wallettracker.backend NVD_API_KEY
 
+      - name: Show PR dependency sources (debug)
+        run: |
+          echo "PR HEAD SHA: ${{ github.event.pull_request.head.sha }}"
+          echo "--- app/pyproject.toml (jwt lines) ---"
+          grep -in "jwt" app/pyproject.toml || true
+          echo "--- app/uv.lock (pyjwt pin) ---"
+          grep -B1 -A2 'name = "pyjwt"' app/uv.lock | head -20 || true
+
       - name: Generate SBOM with Syft
         run: |
+          # Scan the checked-out PR source dir. Syft reads app/pyproject.toml
+          # AND app/uv.lock as committed in this PR, so pinned versions in
+          # uv.lock are what land in the SBOM. The lockfile-check job above
+          # guarantees both files agree before this runs. Do NOT use
+          # `uv lock --upgrade` or `syft packages pyproject:` here: the
+          # former resolves >= ranges to newest (hiding vulns), the latter
+          # only sees ranges instead of resolved versions.
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
             | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
+          echo "--- SBOM jwt components (must match PR commit) ---"
+          jq -c '.components[] | select(.name | test("jwt"; "i")) | {name, version, purl}' bom.json || true
 
       - if: always()
         uses: actions/upload-artifact@v4
@@ -92,21 +143,60 @@ jobs:
           rm -f "$BODY_FILE"
 
           if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::warning::Dependency Track returned HTTP $HTTP_STATUS"
+            echo "::error::Dependency Track returned HTTP $HTTP_STATUS"
             echo "Response:"
             cat "$HTTP_RESPONSE" || echo "(empty)"
-            echo "bom-token=" >> "$GITHUB_OUTPUT"
-          else
-            BOM_TOKEN=$(jq -r '.token' "$HTTP_RESPONSE" 2>/dev/null || echo "")
-            if [ -z "$BOM_TOKEN" ] || [ "$BOM_TOKEN" = "null" ]; then
-              echo "::warning::Failed to extract BOM token from DT response"
-              cat "$HTTP_RESPONSE"
-              echo "bom-token=" >> "$GITHUB_OUTPUT"
-            else
-              echo "bom-token=$BOM_TOKEN" >> "$GITHUB_OUTPUT"
-            fi
+            rm -f "$HTTP_RESPONSE"
+            exit 1
           fi
+          BOM_TOKEN=$(jq -r '.token' "$HTTP_RESPONSE" 2>/dev/null || echo "")
           rm -f "$HTTP_RESPONSE"
+          if [ -z "$BOM_TOKEN" ] || [ "$BOM_TOKEN" = "null" ]; then
+            echo "::error::Failed to extract BOM token from DT response"
+            exit 1
+          fi
+          echo "SBOM uploaded, BOM token: $BOM_TOKEN"
+          echo "bom-token=$BOM_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Dependency Track Analysis
+        run: |
+          # Dependency Track processes the BOM asynchronously. The SonarQube
+          # dependency-track plugin proxies live DT findings at scan time, so
+          # the Sonar analysis MUST run only after DT finishes analysing this
+          # BOM - otherwise the quality gate evaluates stale vulnerabilities.
+          # NOTE: `jq -r '.processing'` (no `// empty`): the // operator
+          # treats boolean false like null and would swallow the "done"
+          # signal, making this loop always time out.
+          BOM_TOKEN="${{ steps.sbom.outputs.bom-token }}"
+          if [ -z "$BOM_TOKEN" ]; then
+            echo "::error::No BOM token available, cannot wait for analysis"
+            exit 1
+          fi
+          echo "Waiting for DT analysis (token: $BOM_TOKEN)..."
+          MAX_ATTEMPTS=60
+          ATTEMPT=0
+          while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            STATUS_JSON=$(curl -sS -H "X-Api-Key: $DT_API_KEY" \
+              "$DT_URL/api/v1/bom/token/$BOM_TOKEN" 2>/dev/null || echo "")
+            PROCESSING=$(echo "$STATUS_JSON" | jq -r '.processing' 2>/dev/null || echo "")
+            if [ "$PROCESSING" = "false" ]; then
+              echo "DT analysis complete after $ATTEMPT attempt(s)."
+              break
+            fi
+            if [ "$ATTEMPT" -eq "$MAX_ATTEMPTS" ]; then
+              echo "::error::DT analysis did not complete within timeout. Last response:"
+              echo "$STATUS_JSON" || true
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "--- DT findings for project $DT_PROJECT_UUID ---"
+          curl -sS -H "X-Api-Key: $DT_API_KEY" \
+            "$DT_URL/api/v1/finding/project/$DT_PROJECT_UUID" \
+            | jq -r '.[] | "- [\(.vulnerability.severity)] \(.component.name)@\(.component.version): \(.vulnerability.vulnId)"' \
+            | head -50 || true
+
       - run: ls -la coverage.xml && head -100 coverage.xml
 
       - name: SonarQube Analysis
@@ -123,18 +213,3 @@ jobs:
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           pollingTimeoutSec: 300
-
-      # - name: OWASP Dependency Check
-      #   continue-on-error: true
-      #   run: |
-      #     mkdir -p dependency-check-report
-      #     docker run --rm \
-      #       -v "$(pwd):/src" \
-      #       -v "$(pwd)/dependency-check-report:/report" \
-      #       owasp/dependency-check:12.2.2 \
-      #       --scan /src/app/pyproject.toml \
-      #       --enableExperimental \
-      #       --project "wallet-tracker-api" \
-      #       --format JSON \
-      #       --out /report \
-      #       --nvdApiKey "${{ env.NVD_API_KEY }}"
