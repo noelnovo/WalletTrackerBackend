@@ -16,7 +16,7 @@ GitHub ──► GitHub Actions ──► Jenkins ──► Proxmox (Docker cont
                                                     MariaDB (port 3306)
 
 Terraform manages: Proxmox VMs/containers, Cloudflare DNS, Vault secrets
-HashiCorp Vault: stores all secrets (Jenkins credentials, DB passwords, API tokens)
+HashiCorp Vault: stores all secrets (Jenkins credentials, DB passwords, API tokens).
 ```
 
 ### Components
@@ -67,7 +67,7 @@ sudo apt install libmariadb-dev
 ### 1. Clone
 
 ```bash
-git clone https://github.com/noelnovo/WalletTrackerAPI.git && cd WalletTrackerAPI/
+git clone https://github.com/noelnovo/WalletTrackerBackend.git && cd WalletTrackerBackend/
 ```
 
 ### 2. Python virtual environment

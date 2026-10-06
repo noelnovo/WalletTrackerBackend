@@ -2,6 +2,11 @@ pipeline {
     agent any
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
+        // One deploy at a time: a queued build waits instead of taking a second
+        // workspace (@2) with no Terraform state and re-creating the world.
+        // (2026-10-04 incident: concurrent GitHub+GitLab triggers created
+        // duplicate LXC containers with the same IPs and MariaDB datadir.)
+        disableConcurrentBuilds()
     }
     parameters {
         string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'Branch to build')
@@ -43,13 +48,12 @@ pipeline {
                         // Push wallet tracker image to registry, then remove local copy to free disk space.
                         // Keep all sensitive values in shell environment only; do not read or interpolate
                         // Vault-provided secrets in Groovy before the shell executes.
-                        // REGISTRY must be a bare hostname (registry.downops.win), no https://, no trailing path.
                         sh '''
                             set -euo pipefail
 
                             REGISTRY_HOST="${REGISTRY#https://}"
                             REGISTRY_HOST="${REGISTRY_HOST%%/*}"
-                            IMAGE_NAME="${REGISTRY_HOST}/wallettracker/backend:${IMAGE_VERSION}"
+                            IMAGE_NAME="${REGISTRY_HOST}/downops/wallettracker-backend:${IMAGE_VERSION}"
 
                             docker build -t "$IMAGE_NAME" ./app
                             echo "$DOCKER_PASSWORD" | docker login "$REGISTRY_HOST" -u "$DOCKER_USERNAME" --password-stdin

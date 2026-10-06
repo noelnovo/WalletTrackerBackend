@@ -62,8 +62,8 @@ resource "null_resource" "setup_api_in_container" {
   connection {
     type     = "ssh"
     host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.common.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.common.data["PROXMOX_PASSWORD"]
+    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
   }
 
   provisioner "file" {
@@ -109,15 +109,22 @@ resource "null_resource" "deploy_api" {
   connection {
     type     = "ssh"
     host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.common.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.common.data["PROXMOX_PASSWORD"]
+    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
   }
 
   provisioner "remote-exec" {
     inline = [
       <<-EOF
       set -ex
-      pct exec ${local.api_vmid} -- git -C ${local.repo_path} pull
+      pct exec ${local.api_vmid} -- git -C ${local.repo_path} fetch origin
+      pct exec ${local.api_vmid} -- git -C ${local.repo_path} reset --hard @{u}
+
+      # mysqlclient has no musl wheel and must compile from source. setup_api_in_container
+      # removes the toolchain after the first install and is not re-run on existing
+      # containers, so make sure a compiler is available before every uv sync. This is a
+      # no-op once the toolchain is already present.
+      pct exec ${local.api_vmid} -- sh -c 'command -v cc >/dev/null 2>&1 || apk add --no-cache build-base mariadb-dev python3-dev'
 
       pct exec ${local.api_vmid} -- uv sync --no-dev --no-install-project --project ${local.repo_path}/app
 

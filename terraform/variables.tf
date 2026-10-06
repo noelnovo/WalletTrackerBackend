@@ -10,10 +10,16 @@ variable "vault_kv_mount" {
   default     = "downops"
 }
 
-variable "vault_kv_common_secret_path" {
-  description = "Path under the Vault KV v2 mount holding shared/common infrastructure secrets"
+variable "vault_kv_proxmox_secret_path" {
+  description = "Path under the Vault KV v2 mount holding Proxmox credentials"
   type        = string
-  default     = "common"
+  default     = "proxmox"
+}
+
+variable "vault_kv_cloudflare_secret_path" {
+  description = "Path under the Vault KV v2 mount holding Cloudflare credentials"
+  type        = string
+  default     = "cloudflare"
 }
 
 variable "vault_kv_app_secret_path" {
@@ -31,7 +37,7 @@ variable "vault_kv_app_common_secret_path" {
 variable "proxmox_ip" {
   description = "Proxmox IP address"
   type        = string
-  default     = "proxmox.internal"
+  default     = "proxmox.int.downops.win"
 }
 variable "proxmox_port" {
   description = "Proxmox port number"
