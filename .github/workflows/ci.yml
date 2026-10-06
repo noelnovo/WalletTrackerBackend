@@ -69,6 +69,16 @@ jobs:
             downops/data/wallettracker.backend DT_PROJECT_UUID ;
             downops/data/wallettracker.backend NVD_API_KEY
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Verify uv.lock is in sync
+        run: |
+          # Fail fast when app/uv.lock does not match app/pyproject.toml.
+          # Regenerate locally with `cd app && uv lock` and commit both files.
+          # A pre-commit hook (.pre-commit-config.yaml) runs the same check.
+          cd app && uv lock --check
+
       - name: Show PR dependency sources (debug)
         run: |
           echo "PR HEAD SHA: ${{ github.event.pull_request.head.sha }}"
@@ -83,9 +93,8 @@ jobs:
           # AND app/uv.lock as committed in this PR, so pinned versions in
           # uv.lock are what land in the SBOM. Do NOT run `uv lock --upgrade`
           # here: it would resolve >= ranges to newest releases and hide the
-          # vulnerable versions this gate is meant to catch. If pyproject.toml
-          # and uv.lock disagree, `uv lock --check` below fails fast so the
-          # author must commit a regenerated lock file.
+          # vulnerable versions this gate is meant to catch. The
+          # `uv lock --check` step above guarantees both files agree.
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
             | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
           echo "--- SBOM jwt components (must match PR commit) ---"
