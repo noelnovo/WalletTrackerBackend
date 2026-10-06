@@ -78,35 +78,94 @@ jobs:
 
       - name: Submit SBOM to Dependency Track
         id: sbom
+        continue-on-error: true
         run: |
           BODY_FILE=$(mktemp)
           jq -n --arg project "$DT_PROJECT_UUID" --rawfile bom bom.json \
             '{project: $project, bom: ($bom | @base64)}' > "$BODY_FILE"
+
           HTTP_RESPONSE=$(mktemp)
+          echo "Submitting to: $DT_URL/api/v1/bom"
+          echo "Project UUID: $DT_PROJECT_UUID"
+          echo "SBOM file size: $(wc -c < bom.json) bytes"
+
           HTTP_STATUS=$(curl -sS --max-time 120 -X "PUT" "$DT_URL/api/v1/bom" \
             -H "Content-Type: application/json" \
             -H "X-Api-Key: $DT_API_KEY" \
             -d @"$BODY_FILE" \
             -w "%{http_code}" \
             -o "$HTTP_RESPONSE") || true
+
           rm -f "$BODY_FILE"
 
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::warning::Dependency Track returned HTTP $HTTP_STATUS"
-            echo "Response:"
-            cat "$HTTP_RESPONSE" || echo "(empty)"
-            echo "bom-token=" >> "$GITHUB_OUTPUT"
-          else
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Full DT Response:"
+          cat "$HTTP_RESPONSE"
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✓ SBOM uploaded successfully"
             BOM_TOKEN=$(jq -r '.token' "$HTTP_RESPONSE" 2>/dev/null || echo "")
             if [ -z "$BOM_TOKEN" ] || [ "$BOM_TOKEN" = "null" ]; then
-              echo "::warning::Failed to extract BOM token from DT response"
-              cat "$HTTP_RESPONSE"
+              echo "::warning::Response received but token extraction failed"
               echo "bom-token=" >> "$GITHUB_OUTPUT"
             else
+              echo "✓ BOM Token: $BOM_TOKEN"
               echo "bom-token=$BOM_TOKEN" >> "$GITHUB_OUTPUT"
             fi
+          else
+            echo "::error::Dependency Track returned HTTP $HTTP_STATUS"
+            echo "bom-token=" >> "$GITHUB_OUTPUT"
           fi
+
           rm -f "$HTTP_RESPONSE"
+
+      - name: Wait for Dependency Track Analysis
+        id: dt-analysis
+        continue-on-error: true
+        run: |
+          BOM_TOKEN="${{ steps.sbom.outputs.bom-token }}"
+
+          if [ -z "$BOM_TOKEN" ]; then
+            echo "::warning::No BOM token available, skipping analysis wait"
+            exit 0
+          fi
+
+          echo "Waiting for Dependency Track analysis to complete (token: $BOM_TOKEN)..."
+          MAX_ATTEMPTS=120
+          ATTEMPT=0
+          ANALYSIS_COMPLETE=false
+
+          while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+
+            RESPONSE=$(curl -sS -H "X-Api-Key: $DT_API_KEY" \
+              "$DT_URL/api/v1/bom/token/$BOM_TOKEN/findings" 2>/dev/null || echo '{"error":"connection failed"}')
+
+            if echo "$RESPONSE" | jq empty 2>/dev/null; then
+              FINDING_COUNT=$(echo "$RESPONSE" | jq 'length')
+              echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: analysis has returned $FINDING_COUNT findings"
+
+              if [ "$FINDING_COUNT" -ge 0 ]; then
+                echo "✓ Dependency Track analysis is available."
+                if [ "$FINDING_COUNT" -eq 0 ]; then
+                  echo "No vulnerabilities detected for this BOM."
+                else
+                  echo "$RESPONSE" | jq -r '.[] | "  - [\(.severity)] \(.component.name)@\(.component.version): \(.vulnerability.vulnId)"'
+                fi
+                ANALYSIS_COMPLETE=true
+                break
+              fi
+            else
+              echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Dependency Track not ready yet"
+            fi
+
+            sleep 5
+          done
+
+          if [ "$ANALYSIS_COMPLETE" = false ]; then
+            echo "::warning::Dependency Track analysis did not complete within timeout. The SBOM has still been uploaded and SonarQube will continue using the latest available data."
+          fi
+
       - run: ls -la coverage.xml && head -100 coverage.xml
 
       - name: SonarQube Analysis
