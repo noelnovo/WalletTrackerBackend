@@ -7,43 +7,9 @@ on:
 jobs:
   python-tests:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      # Check out the PR branch (not the merge ref) so a regenerated
-      # uv.lock can be pushed back below.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Regenerate uv.lock from PR pyproject
-        run: |
-          # Developers never need to run `uv lock` by hand: CI resolves
-          # app/pyproject.toml here, builds/tests with the result, and
-          # pushes the updated lock back to the PR branch. A pre-commit
-          # hook (.pre-commit-config.yaml) gives the same feedback locally.
-          cd app && uv lock
-          cd ..
-          git diff --stat -- app/uv.lock || true
-
-      - name: Push regenerated uv.lock to PR branch
-        run: |
-          BRANCH="${{ github.head_ref }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- app/uv.lock; then
-            echo "uv.lock already in sync, nothing to push."
-          else
-            git add app/uv.lock
-            git -c core.editor=true commit -m "chore: regenerate app/uv.lock from pyproject.toml [auto]"
-            git pull --rebase origin "$BRANCH" || true
-            git push origin "HEAD:$BRANCH" || echo "::warning::uv.lock push raced with another update; continuing with local copy."
-          fi
 
       - run: docker compose down --volumes --remove-orphans || true
 
@@ -78,18 +44,13 @@ jobs:
   security-checks:
     runs-on: ubuntu-latest
     needs: [python-tests]
-    permissions:
-      contents: write
 
     steps:
-      # Check out the PR HEAD branch explicitly so the SBOM below reflects
+      # Check out the PR HEAD commit explicitly so the SBOM below reflects
       # exactly the dependencies being merged, not the base branch.
-      # python-tests already pushed any regenerated lock, so this checkout
-      # includes it.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -111,18 +72,16 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Regenerate uv.lock from PR pyproject
+      - name: Verify uv.lock is in sync
         run: |
-          # Safety net: normally python-tests already synced and pushed the
-          # lock, so this is a no-op. It guarantees the SBOM below always
-          # matches app/pyproject.toml even if python-tests was skipped.
-          cd app && uv lock
-          cd ..
-          git diff --stat -- app/uv.lock || true
+          # Fail fast when app/uv.lock does not match app/pyproject.toml.
+          # Regenerate locally with `cd app && uv lock` and commit both files.
+          # A pre-commit hook (.pre-commit-config.yaml) runs the same check.
+          cd app && uv lock --check
 
       - name: Show PR dependency sources (debug)
         run: |
-          echo "PR branch: ${{ github.head_ref }} HEAD SHA: ${{ github.sha }}"
+          echo "PR HEAD SHA: ${{ github.event.pull_request.head.sha }}"
           echo "--- app/pyproject.toml (jwt lines) ---"
           grep -in "jwt" app/pyproject.toml || true
           echo "--- app/uv.lock (pyjwt pin) ---"
@@ -131,11 +90,11 @@ jobs:
       - name: Generate SBOM with Syft
         run: |
           # Scan the checked-out PR source dir. Syft reads app/pyproject.toml
-          # AND app/uv.lock, and the steps above regenerated the lock, so the
-          # SBOM always matches the declared dependencies. Do NOT use
-          # `uv lock --upgrade` or `syft packages pyproject:` here: the
-          # former resolves >= ranges to newest (hiding vulns), the latter
-          # only sees ranges instead of resolved versions.
+          # AND app/uv.lock as committed in this PR, so pinned versions in
+          # uv.lock are what land in the SBOM. Do NOT run `uv lock` or
+          # `uv lock --upgrade` here: CI must test committed files, and
+          # --upgrade would resolve >= ranges to newest (hiding vulns). The
+          # `uv lock --check` step above guarantees both files agree.
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
             | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
           echo "--- SBOM jwt components (must match PR commit) ---"
