@@ -67,6 +67,12 @@ jobs:
 
       - name: Generate SBOM with Syft
         run: |
+          cd app
+          # Regenerate lock file with current pyproject.toml to ensure accurate SBOM
+          uv lock --upgrade
+          cd ..
+          
+          # Scan app directory (includes uv.lock with correct dependency versions)
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
             | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
 
