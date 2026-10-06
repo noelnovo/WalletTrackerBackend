@@ -5,8 +5,38 @@ on:
     branches: [main]
 
 jobs:
+  lockfile-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Enforce that app/uv.lock matches app/pyproject.toml. This job is
+      # meant to be a required branch-protection check: it blocks merging
+      # when the lock is stale, so developers get a clear message instead
+      # of a confusing Docker/SBOM failure downstream.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Verify uv.lock is in sync
+        run: |
+          cd app
+          if uv lock --check; then
+            echo "uv.lock is in sync with pyproject.toml."
+          else
+            echo "::error::app/uv.lock is out of sync with app/pyproject.toml."
+            echo "::error::Regenerate it locally and commit both files:"
+            echo "::error::  git checkout ${{ github.head_ref }}"
+            echo "::error::  cd app && uv lock"
+            echo "::error::  git add pyproject.toml uv.lock && git commit -m \"Regenerate lock\" && git push"
+            exit 1
+          fi
+
   python-tests:
     runs-on: ubuntu-latest
+    needs: [lockfile-check]
 
     steps:
       - uses: actions/checkout@v4
@@ -69,16 +99,6 @@ jobs:
             downops/data/wallettracker.backend DT_PROJECT_UUID ;
             downops/data/wallettracker.backend NVD_API_KEY
 
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Verify uv.lock is in sync
-        run: |
-          # Fail fast when app/uv.lock does not match app/pyproject.toml.
-          # Regenerate locally with `cd app && uv lock` and commit both files.
-          # A pre-commit hook (.pre-commit-config.yaml) runs the same check.
-          cd app && uv lock --check
-
       - name: Show PR dependency sources (debug)
         run: |
           echo "PR HEAD SHA: ${{ github.event.pull_request.head.sha }}"
@@ -91,10 +111,11 @@ jobs:
         run: |
           # Scan the checked-out PR source dir. Syft reads app/pyproject.toml
           # AND app/uv.lock as committed in this PR, so pinned versions in
-          # uv.lock are what land in the SBOM. Do NOT run `uv lock` or
-          # `uv lock --upgrade` here: CI must test committed files, and
-          # --upgrade would resolve >= ranges to newest (hiding vulns). The
-          # `uv lock --check` step above guarantees both files agree.
+          # uv.lock are what land in the SBOM. The lockfile-check job above
+          # guarantees both files agree before this runs. Do NOT use
+          # `uv lock --upgrade` or `syft packages pyproject:` here: the
+          # former resolves >= ranges to newest (hiding vulns), the latter
+          # only sees ranges instead of resolved versions.
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
             | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
           echo "--- SBOM jwt components (must match PR commit) ---"
