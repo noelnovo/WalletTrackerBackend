@@ -239,3 +239,11 @@ Available request groups:
 - Auth (`/login`, `/register`)
 - Expense Categories
 - Expenses
+
+---
+
+## Dependency security demo
+
+This branch keeps `app/pyproject.toml` and `app/uv.lock` identical to `main`
+(the secure dependency set). Only this README section differs; it exists solely so
+the pull request has a diff against `main` for the SonarQube / Dependency-Track demo.
