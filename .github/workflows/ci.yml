@@ -71,26 +71,69 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
-  # Generic, cross-repo scan: CycloneDX SBOM -> Syft -> OWASP Dependency-Track.
-  # Defined once in noelnovo/.github and reused by every product. It must finish
-  # before the SonarQube quality gate below, because SonarQube's dependency-track
-  # plugin proxies the live DT findings at scan time.
-  security-scan:
+  # Product-specific: generate the CycloneDX SBOM and upload it as an artifact.
+  # A .NET product would replace this job with its own generator (e.g.
+  # cyclonedx-dotnet) and upload the same artifact name/filename; the generic
+  # Dependency-Track workflow below is toolchain-agnostic.
+  sbom:
     needs: [python-tests]
+    runs-on: ubuntu-latest
+
+    steps:
+      # Check out the PR HEAD commit so the SBOM reflects exactly the
+      # dependencies being merged, not the base branch.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Show PR dependency sources (debug)
+        run: |
+          echo "PR HEAD SHA: ${{ github.event.pull_request.head.sha }}"
+          echo "--- app/pyproject.toml (jwt lines) ---"
+          grep -in "jwt" app/pyproject.toml || true
+          echo "--- app/uv.lock (pyjwt pin) ---"
+          grep -B1 -A2 'name = "pyjwt"' app/uv.lock | head -20 || true
+
+      - name: Generate CycloneDX SBOM with Syft
+        run: |
+          # Scan the checked-out PR source dir. Syft reads app/pyproject.toml
+          # AND app/uv.lock as committed in this PR, so pinned versions in
+          # uv.lock are what land in the SBOM. The lockfile-check job above
+          # guarantees both files agree before this runs. Do NOT use
+          # `uv lock --upgrade` or `syft packages pyproject:` here: the former
+          # resolves >= ranges to newest (hiding vulns), the latter only sees
+          # ranges instead of resolved versions.
+          docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
+            | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
+          echo "--- SBOM jwt components (must match PR commit) ---"
+          jq -c '.components[] | select(.name | test("jwt"; "i")) | {name, version, purl}' bom.json || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: bom.json
+
+  # Generic, cross-repo: push the CycloneDX artifact to OWASP Dependency-Track
+  # and wait for the analysis. Defined once in noelnovo/.github and reused by
+  # every product; it does not generate the SBOM.
+  dependency-track:
+    needs: [sbom]
     permissions:
       contents: read
     uses: noelnovo/.github/.github/workflows/dependency-track-scan.yml@main
     with:
-      working-directory: app
+      sbom-artifact-name: sbom
+      sbom-filename: bom.json
       vault-secret-path: downops/data/wallettracker.backend
-      checkout-ref: ${{ github.event.pull_request.head.sha }}
     secrets:
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
 
-  # Product-specific: SonarQube analysis + quality gate, only after the DT scan.
+  # Product-specific: SonarQube analysis + quality gate. Runs only after the
+  # Dependency-Track scan, because SonarQube's dependency-track plugin proxies
+  # the live DT findings at scan time.
   sonarqube:
     runs-on: ubuntu-latest
-    needs: [python-tests, security-scan]
+    needs: [python-tests, dependency-track]
 
     steps:
       - uses: actions/checkout@v4
