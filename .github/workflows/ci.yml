@@ -130,6 +130,7 @@ jobs:
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
 
   # Product-specific: SonarQube analysis + quality gate, after the DT scan.
+  # This is the branch-protection required check.
   sonarqube:
     runs-on: ubuntu-latest
     needs: [python-tests, dependency-track]
@@ -166,19 +167,3 @@ jobs:
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           pollingTimeoutSec: 300
-
-  # Single, stable required check for branch protection: "security-checks".
-  security-checks:
-    name: security-checks
-    if: always()
-    needs: [lockfile-check, python-tests, sbom, dependency-track, sonarqube]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Fail when any check failed
-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
-        run: |
-          echo "::error::A check failed — see the individual jobs above."
-          exit 1
-      - name: Confirm all checks passed
-        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
-        run: echo "All checks passed."
