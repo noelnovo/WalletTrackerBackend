@@ -4,16 +4,13 @@ on:
   pull_request:
     branches: [main]
 
-# Serialise runs that target the same Dependency-Track project. The SonarQube
-# dependency-track plugin reads the *live* DT findings for the project, so two
-# PRs running at once pollute each other (one PR's vulnerable BOM can fail the
-# other PR's quality gate). Runs queue instead of cancelling.
+# Runs targeting the same DT project must queue: the SonarQube DT plugin reads
+# live DT findings, so parallel PRs would pollute each other's quality gate.
 concurrency:
   group: dt-scan-${{ vars.DT_PROJECT_UUID || github.repository }}
   cancel-in-progress: false
 
 jobs:
-  # ── lockfile / lint gate ────────────────────────────────────────────────────
   lockfile-check:
     runs-on: ubuntu-latest
 
@@ -39,7 +36,6 @@ jobs:
             exit 1
           fi
 
-  # ── Python tests (separate from the security checks) ────────────────────────
   python-tests:
     runs-on: ubuntu-latest
     needs: [lockfile-check]
@@ -77,12 +73,6 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
-  # ── Security checks (separate from the Python tests) ────────────────────────
-
-  # Product-specific: generate the CycloneDX SBOM and upload it as an artifact.
-  # A .NET product would replace this job with its own generator (e.g.
-  # cyclonedx-dotnet) and upload the same artifact name/filename; the generic
-  # Dependency-Track workflow below is toolchain-agnostic.
   sbom:
     runs-on: ubuntu-latest
 
@@ -111,13 +101,10 @@ jobs:
 
       - name: Generate CycloneDX SBOM with Syft (installed venv keeps licenses)
         run: |
-          # NOTE: scanning the source dir / uv.lock yields components WITHOUT
-          # licenses (uv.lock carries no license data: 60 comps, 0 licenses).
-          # Scanning the installed venv instead lets Syft read each wheel's
-          # METADATA (License-Expression), then we keep library components only
-          # (a raw venv scan also lists files/binaries as components).
-          # No license ids are hardcoded anywhere: whatever Syft reads from the
-          # packages lands in the BOM, and license policy lives in DT.
+          # uv.lock carries no license data, so scanning the source dir yields
+          # licenseless components; the installed venv lets Syft read each
+          # wheel's METADATA instead. Keep libraries only: a raw venv scan
+          # also lists files/binaries as components.
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app/.venv -o cyclonedx-json \
             | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json" | .components |= map(select(.type == "library"))' > bom.json
           echo "--- SBOM jwt components (must match PR commit) ---"
@@ -132,9 +119,7 @@ jobs:
           name: sbom
           path: bom.json
 
-  # Generic, cross-repo: push the CycloneDX artifact to OWASP Dependency-Track
-  # and wait for the analysis. Defined once in noelnovo/.github and reused by
-  # every product; it does not generate the SBOM.
+  # Shared DT scan, defined once in noelnovo/.github; consumes the sbom artifact above.
   dependency-track:
     needs: [sbom]
     permissions:
@@ -150,8 +135,6 @@ jobs:
       DT_API_KEY: ${{ secrets.DT_API_KEY }}
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
 
-  # Product-specific: SonarQube analysis + quality gate, after the DT scan.
-  # This is the branch-protection required check.
   sonarqube:
     runs-on: ubuntu-latest
     needs: [python-tests, dependency-track]
