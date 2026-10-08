@@ -116,96 +116,15 @@ jobs:
           # Scanning the installed venv instead lets Syft read each wheel's
           # METADATA (License-Expression), then we keep library components only
           # (a raw venv scan also lists files/binaries as components).
+          # No license ids are hardcoded anywhere: whatever Syft reads from the
+          # packages lands in the BOM, and license policy lives in DT.
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app/.venv -o cyclonedx-json \
-            | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json" | .components |= map(select(.type == "library"))' > bom-tmp.json
+            | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json" | .components |= map(select(.type == "library"))' > bom.json
           echo "--- SBOM jwt components (must match PR commit) ---"
-          jq -c '.components[] | select(.name | test("jwt"; "i")) | {name, version, purl, licenses}' bom-tmp.json || true
-
-      - name: Enrich missing component licenses from PyPI
-        run: |
-          python3 - <<'PY'
-          """Fill SBOM components missing `licenses` from PyPI metadata (stdlib only)."""
-          import json
-          import urllib.request
-
-          # Trove classifier -> SPDX id. Only unambiguous mappings; anything else
-          # falls back to the classifier text as a license *name* (never invent ids).
-          CLASSIFIER_TO_SPDX = {
-              "License :: OSI Approved :: MIT License": "MIT",
-              "License :: OSI Approved :: ISC License (ISCL)": "ISC",
-              "License :: OSI Approved :: Apache Software License": "Apache-2.0",
-              "License :: OSI Approved :: BSD License": None,
-              "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)": "MPL-2.0",
-              "License :: OSI Approved :: Python Software Foundation License": "PSF-2.0",
-              "License :: OSI Approved :: GNU General Public License (GPL)": None,
-              "License :: OSI Approved :: GNU General Public License v2 (GPLv2)": "GPL-2.0-only",
-              "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)": "GPL-2.0-or-later",
-              "License :: OSI Approved :: GNU General Public License v3 (GPLv3)": "GPL-3.0-only",
-              "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)": "GPL-3.0-or-later",
-              "License :: OSI Approved :: GNU Lesser General Public License v2 (LGPLv2)": "LGPL-2.0-only",
-              "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)": "LGPL-2.0-or-later",
-              "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)": "LGPL-3.0-only",
-              "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)": "LGPL-3.0-or-later",
-              "License :: OSI Approved :: Artistic License": "Artistic-2.0",
-          }
-
-          def pypi_info(name, version):
-              url = "https://pypi.org/pypi/%s/%s/json" % (name, version)
-              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-              with urllib.request.urlopen(req, timeout=20) as response:
-                  return json.load(response)["info"]
-
-          def license_for(name, version):
-              info = pypi_info(name, version)
-              expr = (info.get("license_expression") or "").strip()
-              if expr:
-                  if " " not in expr and "/" not in expr:
-                      return [{"license": {"id": expr}}]
-                  return [{"expression": expr}]
-              for classifier in info.get("classifiers") or []:
-                  if classifier in CLASSIFIER_TO_SPDX:
-                      spdx = CLASSIFIER_TO_SPDX[classifier]
-                      if spdx:
-                          return [{"license": {"id": spdx}}]
-                      return [{"license": {"name": classifier.split("::")[-1].strip()}}]
-              raw = (info.get("license") or "").strip()
-              if raw and raw.upper() != "UNKNOWN":
-                  return [{"license": {"name": raw}}]
-              return None
-
-          with open("bom-tmp.json") as handle:
-              bom = json.load(handle)
-          enriched, unresolved = 0, []
-          for component in bom.get("components", []):
-              if component.get("licenses"):
-                  continue
-              name = component.get("name")
-              version = component.get("version")
-              if not name or not version:
-                  unresolved.append("%s@%s" % (name, version))
-                  continue
-              try:
-                  licenses = license_for(name, version)
-              except Exception as exc:
-                  print("WARN: PyPI lookup failed for %s==%s: %s" % (name, version, exc))
-                  unresolved.append("%s==%s" % (name, version))
-                  continue
-              if licenses:
-                  component["licenses"] = licenses
-                  enriched += 1
-              else:
-                  unresolved.append("%s==%s" % (name, version))
-          with open("bom.json", "w") as handle:
-              json.dump(bom, handle, indent=2)
-              handle.write("\n")
-          total = len(bom.get("components", []))
-          with_licenses = sum(1 for c in bom["components"] if c.get("licenses"))
-          print("components=%d with-licenses=%d enriched=%d unresolved=%s"
-                % (total, with_licenses, enriched, unresolved or "none"))
-          PY
+          jq -c '.components[] | select(.name | test("jwt"; "i")) | {name, version, purl, licenses}' bom.json || true
           echo "--- SBOM license coverage ---"
           echo "components with licenses: $(jq '[.components[] | select(.licenses != null)] | length' bom.json)/$(jq '.components | length' bom.json)"
-          echo "--- components still without licenses (should be none) ---"
+          echo "--- components still without licenses ---"
           jq -c '.components[] | select(.licenses == null) | {name, version}' bom.json || true
 
       - uses: actions/upload-artifact@v4
