@@ -5,6 +5,7 @@ on:
     branches: [main]
 
 jobs:
+  # ── lockfile / lint gate ────────────────────────────────────────────────────
   lockfile-check:
     runs-on: ubuntu-latest
 
@@ -34,6 +35,7 @@ jobs:
             exit 1
           fi
 
+  # ── Python tests (separate from the security checks) ────────────────────────
   python-tests:
     runs-on: ubuntu-latest
     needs: [lockfile-check]
@@ -71,33 +73,21 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
-  security-checks:
+  # ── Security checks (separate from the Python tests) ────────────────────────
+
+  # Product-specific: generate the CycloneDX SBOM and upload it as an artifact.
+  # A .NET product would replace this job with its own generator (e.g.
+  # cyclonedx-dotnet) and upload the same artifact name/filename; the generic
+  # Dependency-Track workflow below is toolchain-agnostic.
+  sbom:
     runs-on: ubuntu-latest
-    needs: [python-tests]
 
     steps:
-      # Check out the PR HEAD commit explicitly so the SBOM below reflects
-      # exactly the dependencies being merged, not the base branch.
+      # Check out the PR HEAD commit so the SBOM reflects exactly the
+      # dependencies being merged, not the base branch.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: coverage-report
-
-      - name: Fetch secrets from Vault
-        uses: hashicorp/vault-action@v4
-        with:
-          url: https://vault.downops.win
-          token: ${{ secrets.VAULT_TOKEN }}
-          secrets: |
-            downops/data/wallettracker.backend SONAR_TOKEN ;
-            downops/data/wallettracker.backend SONAR_HOST_URL ;
-            downops/data/wallettracker.backend DT_URL ;
-            downops/data/wallettracker.backend DT_API_KEY ;
-            downops/data/wallettracker.backend DT_PROJECT_UUID ;
-            downops/data/wallettracker.backend NVD_API_KEY
 
       - name: Show PR dependency sources (debug)
         run: |
@@ -107,95 +97,69 @@ jobs:
           echo "--- app/uv.lock (pyjwt pin) ---"
           grep -B1 -A2 'name = "pyjwt"' app/uv.lock | head -20 || true
 
-      - name: Generate SBOM with Syft
+      - name: Generate CycloneDX SBOM with Syft
         run: |
           # Scan the checked-out PR source dir. Syft reads app/pyproject.toml
           # AND app/uv.lock as committed in this PR, so pinned versions in
           # uv.lock are what land in the SBOM. The lockfile-check job above
           # guarantees both files agree before this runs. Do NOT use
-          # `uv lock --upgrade` or `syft packages pyproject:` here: the
-          # former resolves >= ranges to newest (hiding vulns), the latter
-          # only sees ranges instead of resolved versions.
+          # `uv lock --upgrade` or `syft packages pyproject:` here: the former
+          # resolves >= ranges to newest (hiding vulns), the latter only sees
+          # ranges instead of resolved versions.
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
             | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
           echo "--- SBOM jwt components (must match PR commit) ---"
           jq -c '.components[] | select(.name | test("jwt"; "i")) | {name, version, purl}' bom.json || true
 
-      - if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: bom.json
 
-      - name: Submit SBOM to Dependency Track
-        id: sbom
-        run: |
-          BODY_FILE=$(mktemp)
-          jq -n --arg project "$DT_PROJECT_UUID" --rawfile bom bom.json \
-            '{project: $project, bom: ($bom | @base64)}' > "$BODY_FILE"
-          HTTP_RESPONSE=$(mktemp)
-          HTTP_STATUS=$(curl -sS --max-time 120 -X "PUT" "$DT_URL/api/v1/bom" \
-            -H "Content-Type: application/json" \
-            -H "X-Api-Key: $DT_API_KEY" \
-            -d @"$BODY_FILE" \
-            -w "%{http_code}" \
-            -o "$HTTP_RESPONSE") || true
-          rm -f "$BODY_FILE"
+  # Generic, cross-repo: push the CycloneDX artifact to OWASP Dependency-Track
+  # and wait for the analysis. Defined once in noelnovo/.github and reused by
+  # every product; it does not generate the SBOM.
+  #
+  # The DT target is per-project: this repo sends its project UUID + API key
+  # (repo variables/secret), and falls back to the Vault path when a value is
+  # unset, so DT creds can stay in Vault if preferred.
+  dependency-track:
+    needs: [sbom]
+    permissions:
+      contents: read
+    uses: noelnovo/.github/.github/workflows/dependency-track-scan.yml@main
+    with:
+      sbom-artifact-name: sbom
+      sbom-filename: bom.json
+      dt-url: ${{ vars.DT_URL }}
+      dt-project-uuid: ${{ vars.DT_PROJECT_UUID }}
+      vault-secret-path: downops/data/wallettracker.backend
+    secrets:
+      DT_API_KEY: ${{ secrets.DT_API_KEY }}
+      VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
 
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::error::Dependency Track returned HTTP $HTTP_STATUS"
-            echo "Response:"
-            cat "$HTTP_RESPONSE" || echo "(empty)"
-            rm -f "$HTTP_RESPONSE"
-            exit 1
-          fi
-          BOM_TOKEN=$(jq -r '.token' "$HTTP_RESPONSE" 2>/dev/null || echo "")
-          rm -f "$HTTP_RESPONSE"
-          if [ -z "$BOM_TOKEN" ] || [ "$BOM_TOKEN" = "null" ]; then
-            echo "::error::Failed to extract BOM token from DT response"
-            exit 1
-          fi
-          echo "SBOM uploaded, BOM token: $BOM_TOKEN"
-          echo "bom-token=$BOM_TOKEN" >> "$GITHUB_OUTPUT"
+  # Product-specific: SonarQube analysis + quality gate. Runs only after the
+  # Dependency-Track scan, because SonarQube's dependency-track plugin proxies
+  # the live DT findings at scan time.
+  sonarqube:
+    runs-on: ubuntu-latest
+    needs: [python-tests, dependency-track]
 
-      - name: Wait for Dependency Track Analysis
-        run: |
-          # Dependency Track processes the BOM asynchronously. The SonarQube
-          # dependency-track plugin proxies live DT findings at scan time, so
-          # the Sonar analysis MUST run only after DT finishes analysing this
-          # BOM - otherwise the quality gate evaluates stale vulnerabilities.
-          # NOTE: `jq -r '.processing'` (no `// empty`): the // operator
-          # treats boolean false like null and would swallow the "done"
-          # signal, making this loop always time out.
-          BOM_TOKEN="${{ steps.sbom.outputs.bom-token }}"
-          if [ -z "$BOM_TOKEN" ]; then
-            echo "::error::No BOM token available, cannot wait for analysis"
-            exit 1
-          fi
-          echo "Waiting for DT analysis (token: $BOM_TOKEN)..."
-          MAX_ATTEMPTS=60
-          ATTEMPT=0
-          while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            STATUS_JSON=$(curl -sS -H "X-Api-Key: $DT_API_KEY" \
-              "$DT_URL/api/v1/bom/token/$BOM_TOKEN" 2>/dev/null || echo "")
-            PROCESSING=$(echo "$STATUS_JSON" | jq -r '.processing' 2>/dev/null || echo "")
-            if [ "$PROCESSING" = "false" ]; then
-              echo "DT analysis complete after $ATTEMPT attempt(s)."
-              break
-            fi
-            if [ "$ATTEMPT" -eq "$MAX_ATTEMPTS" ]; then
-              echo "::error::DT analysis did not complete within timeout. Last response:"
-              echo "$STATUS_JSON" || true
-              exit 1
-            fi
-            sleep 5
-          done
-          echo "--- DT findings for project $DT_PROJECT_UUID ---"
-          curl -sS -H "X-Api-Key: $DT_API_KEY" \
-            "$DT_URL/api/v1/finding/project/$DT_PROJECT_UUID" \
-            | jq -r '.[] | "- [\(.vulnerability.severity)] \(.component.name)@\(.component.version): \(.vulnerability.vulnId)"' \
-            | head -50 || true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+
+      - name: Fetch SonarQube secrets from Vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: https://vault.downops.win
+          token: ${{ secrets.VAULT_TOKEN }}
+          secrets: |
+            downops/data/wallettracker.backend SONAR_TOKEN ;
+            downops/data/wallettracker.backend SONAR_HOST_URL
 
       - run: ls -la coverage.xml && head -100 coverage.xml
 
@@ -213,3 +177,21 @@ jobs:
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           pollingTimeoutSec: 300
+
+  # Single, stable required check for branch protection: "security-checks".
+  # It fans in the whole pipeline and fails if any job failed or was cancelled,
+  # so the PR rule only passes when everything is green.
+  security-checks:
+    name: security-checks
+    if: always()
+    needs: [lockfile-check, python-tests, sbom, dependency-track, sonarqube]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when any check failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "::error::A check failed — see the individual jobs above."
+          exit 1
+      - name: Confirm all checks passed
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        run: echo "All checks passed."
