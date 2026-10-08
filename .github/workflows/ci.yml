@@ -9,7 +9,7 @@ on:
 # PRs running at once pollute each other (one PR's vulnerable BOM can fail the
 # other PR's quality gate). Runs queue instead of cancelling.
 concurrency:
-  group: security-checks-${{ vars.DT_PROJECT_UUID || github.repository }}
+  group: dt-scan-${{ vars.DT_PROJECT_UUID || github.repository }}
   cancel-in-progress: false
 
 jobs:
