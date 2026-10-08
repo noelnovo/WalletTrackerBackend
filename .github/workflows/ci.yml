@@ -36,6 +36,34 @@ jobs:
             exit 1
           fi
 
+  # DEMO ONLY, never merge: regenerates app/uv.lock in CI because the lockfile
+  # is too big to ship through a file-API edit; it pushes back to this branch.
+  regen-lock:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Regenerate lockfile and push back to the PR branch
+        run: |
+          cd app
+          uv lock
+          if git diff --quiet -- uv.lock; then
+            echo "uv.lock already in sync, nothing to do."
+          else
+            git config user.name "ci-lock-bot"
+            git config user.email "ci-lock-bot@downops.win"
+            git add uv.lock
+            git commit -m "demo: regenerate uv.lock for vulnerable pins"
+            git push origin "HEAD:${{ github.head_ref }}"
+          fi
+
   python-tests:
     runs-on: ubuntu-latest
     needs: [lockfile-check]
