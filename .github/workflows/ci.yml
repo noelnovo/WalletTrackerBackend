@@ -116,6 +116,11 @@ jobs:
   # Generic, cross-repo: push the CycloneDX artifact to OWASP Dependency-Track
   # and wait for the analysis. Defined once in noelnovo/.github and reused by
   # every product; it does not generate the SBOM.
+  #
+  # The DT target is per-project: pass dt-url + dt-project-uuid + DT_API_KEY.
+  # Here they come from repo variables/secret (explicit), and fall back to the
+  # Vault path when a variable/secret is unset, so nothing breaks if you prefer
+  # to keep DT creds only in Vault.
   dependency-track:
     needs: [sbom]
     permissions:
@@ -124,8 +129,11 @@ jobs:
     with:
       sbom-artifact-name: sbom
       sbom-filename: bom.json
+      dt-url: ${{ vars.DT_URL }}
+      dt-project-uuid: ${{ vars.DT_PROJECT_UUID }}
       vault-secret-path: downops/data/wallettracker.backend
     secrets:
+      DT_API_KEY: ${{ secrets.DT_API_KEY }}
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
 
   # Product-specific: SonarQube analysis + quality gate. Runs only after the
