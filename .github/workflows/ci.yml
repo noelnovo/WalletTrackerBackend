@@ -1,10 +1,11 @@
-name: security-checks
+name: CI
 
 on:
   pull_request:
     branches: [main]
 
 jobs:
+  # ── lockfile / lint gate ────────────────────────────────────────────────────
   lockfile-check:
     runs-on: ubuntu-latest
 
@@ -34,6 +35,7 @@ jobs:
             exit 1
           fi
 
+  # ── Python tests (separate from the security checks) ────────────────────────
   python-tests:
     runs-on: ubuntu-latest
     needs: [lockfile-check]
@@ -71,12 +73,13 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
+  # ── Security checks (separate from the Python tests) ────────────────────────
+
   # Product-specific: generate the CycloneDX SBOM and upload it as an artifact.
   # A .NET product would replace this job with its own generator (e.g.
   # cyclonedx-dotnet) and upload the same artifact name/filename; the generic
   # Dependency-Track workflow below is toolchain-agnostic.
   sbom:
-    needs: [python-tests]
     runs-on: ubuntu-latest
 
     steps:
@@ -176,19 +179,19 @@ jobs:
           pollingTimeoutSec: 300
 
   # Single, stable required check for branch protection: "security-checks".
-  # It fans in the whole pipeline and fails if any security job failed or was
-  # cancelled, so the PR rule only passes when everything is green.
+  # It fans in the whole pipeline and fails if any job failed or was cancelled,
+  # so the PR rule only passes when everything is green.
   security-checks:
     name: security-checks
     if: always()
     needs: [lockfile-check, python-tests, sbom, dependency-track, sonarqube]
     runs-on: ubuntu-latest
     steps:
-      - name: Fail when any security job failed
+      - name: Fail when any check failed
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: |
-          echo "::error::A security check failed — see the individual jobs above."
+          echo "::error::A check failed — see the individual jobs above."
           exit 1
-      - name: Confirm all security jobs passed
+      - name: Confirm all checks passed
         if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
-        run: echo "All security checks passed."
+        run: echo "All checks passed."
