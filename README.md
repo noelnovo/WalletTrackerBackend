@@ -239,3 +239,12 @@ Available request groups:
 - Auth (`/login`, `/register`)
 - Expense Categories
 - Expenses
+
+---
+
+## Security scan demo (secure)
+
+This branch keeps `app/pyproject.toml` and `app/uv.lock` identical to `main`
+(the secure dependency set); only this section differs. It exercises the CI
+`security-checks` pipeline (CycloneDX -> Dependency-Track -> SonarQube) on a pull
+request with no known vulnerable dependencies.
