@@ -1,4 +1,4 @@
-name: CI
+name: security-checks
 
 on:
   pull_request:
@@ -117,10 +117,9 @@ jobs:
   # and wait for the analysis. Defined once in noelnovo/.github and reused by
   # every product; it does not generate the SBOM.
   #
-  # The DT target is per-project: pass dt-url + dt-project-uuid + DT_API_KEY.
-  # Here they come from repo variables/secret (explicit), and fall back to the
-  # Vault path when a variable/secret is unset, so nothing breaks if you prefer
-  # to keep DT creds only in Vault.
+  # The DT target is per-project: this repo sends its project UUID + API key
+  # (repo variables/secret), and falls back to the Vault path when a value is
+  # unset, so DT creds can stay in Vault if preferred.
   dependency-track:
     needs: [sbom]
     permissions:
@@ -175,3 +174,21 @@ jobs:
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           pollingTimeoutSec: 300
+
+  # Single, stable required check for branch protection: "security-checks".
+  # It fans in the whole pipeline and fails if any security job failed or was
+  # cancelled, so the PR rule only passes when everything is green.
+  security-checks:
+    name: security-checks
+    if: always()
+    needs: [lockfile-check, python-tests, sbom, dependency-track, sonarqube]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when any security job failed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: |
+          echo "::error::A security check failed — see the individual jobs above."
+          exit 1
+      - name: Confirm all security jobs passed
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+        run: echo "All security checks passed."
