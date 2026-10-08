@@ -4,16 +4,20 @@ on:
   pull_request:
     branches: [main]
 
+# Serialise runs that target the same Dependency-Track project. The SonarQube
+# dependency-track plugin reads the *live* DT findings for the project, so two
+# PRs running at once pollute each other (one PR's vulnerable BOM can fail the
+# other PR's quality gate). Runs queue instead of cancelling.
+concurrency:
+  group: security-checks-${{ vars.DT_PROJECT_UUID || github.repository }}
+  cancel-in-progress: false
+
 jobs:
   # ── lockfile / lint gate ────────────────────────────────────────────────────
   lockfile-check:
     runs-on: ubuntu-latest
 
     steps:
-      # Enforce that app/uv.lock matches app/pyproject.toml. This job is
-      # meant to be a required branch-protection check: it blocks merging
-      # when the lock is stale, so developers get a clear message instead
-      # of a confusing Docker/SBOM failure downstream.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -83,8 +87,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Check out the PR HEAD commit so the SBOM reflects exactly the
-      # dependencies being merged, not the base branch.
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -99,13 +101,6 @@ jobs:
 
       - name: Generate CycloneDX SBOM with Syft
         run: |
-          # Scan the checked-out PR source dir. Syft reads app/pyproject.toml
-          # AND app/uv.lock as committed in this PR, so pinned versions in
-          # uv.lock are what land in the SBOM. The lockfile-check job above
-          # guarantees both files agree before this runs. Do NOT use
-          # `uv lock --upgrade` or `syft packages pyproject:` here: the former
-          # resolves >= ranges to newest (hiding vulns), the latter only sees
-          # ranges instead of resolved versions.
           docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
             | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
           echo "--- SBOM jwt components (must match PR commit) ---"
@@ -119,10 +114,6 @@ jobs:
   # Generic, cross-repo: push the CycloneDX artifact to OWASP Dependency-Track
   # and wait for the analysis. Defined once in noelnovo/.github and reused by
   # every product; it does not generate the SBOM.
-  #
-  # The DT target is per-project: this repo sends its project UUID + API key
-  # (repo variables/secret), and falls back to the Vault path when a value is
-  # unset, so DT creds can stay in Vault if preferred.
   dependency-track:
     needs: [sbom]
     permissions:
@@ -138,9 +129,7 @@ jobs:
       DT_API_KEY: ${{ secrets.DT_API_KEY }}
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
 
-  # Product-specific: SonarQube analysis + quality gate. Runs only after the
-  # Dependency-Track scan, because SonarQube's dependency-track plugin proxies
-  # the live DT findings at scan time.
+  # Product-specific: SonarQube analysis + quality gate, after the DT scan.
   sonarqube:
     runs-on: ubuntu-latest
     needs: [python-tests, dependency-track]
@@ -179,8 +168,6 @@ jobs:
           pollingTimeoutSec: 300
 
   # Single, stable required check for branch protection: "security-checks".
-  # It fans in the whole pipeline and fails if any job failed or was cancelled,
-  # so the PR rule only passes when everything is green.
   security-checks:
     name: security-checks
     if: always()
