@@ -28,10 +28,10 @@ jobs:
           url: https://vault.downops.win
           token: ${{ secrets.VAULT_TOKEN }}
           secrets: |
-            downops/data/jenkins JENKINS_API_TOKEN ;
-            downops/data/jenkins JENKINS_HOSTNAME ;
-            downops/data/wallettracker.backend JENKINS_CD_SECRET ;
-            downops/data/jenkins JENKINS_USERNAME
+            downops/data/services/jenkins/api JENKINS_API_TOKEN ;
+            downops/data/services/jenkins/api JENKINS_HOSTNAME ;
+            downops/data/apps/wallettracker/provisioning JENKINS_CD_SECRET ;
+            downops/data/services/jenkins/api JENKINS_USERNAME
 
       - name: Trigger Jenkins Wallet Tracker CD
         if: steps.check-label.outputs.skip != 'true'

@@ -130,7 +130,7 @@ jobs:
       sbom-filename: bom.json
       dt-url: ${{ vars.DT_URL }}
       dt-project-uuid: ${{ vars.DT_PROJECT_UUID }}
-      vault-secret-path: downops/data/wallettracker.backend
+      vault-secret-path: downops/data/apps/wallettracker/provisioning
     secrets:
       DT_API_KEY: ${{ secrets.DT_API_KEY }}
       VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
@@ -152,8 +152,8 @@ jobs:
           url: https://vault.downops.win
           token: ${{ secrets.VAULT_TOKEN }}
           secrets: |
-            downops/data/wallettracker.backend SONAR_TOKEN ;
-            downops/data/wallettracker.backend SONAR_HOST_URL
+            downops/data/apps/wallettracker/provisioning SONAR_TOKEN ;
+            downops/data/apps/wallettracker/provisioning SONAR_HOST_URL
 
       - run: ls -la coverage.xml && head -100 coverage.xml
 
