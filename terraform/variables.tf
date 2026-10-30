@@ -1,7 +1,7 @@
 variable "vault_addr" {
   description = "Vault server address"
   type        = string
-  default     = "https://vault.downops.win"
+  default     = "https://vault.int.downops.win"
 }
 
 variable "vault_kv_mount" {
@@ -13,26 +13,21 @@ variable "vault_kv_mount" {
 variable "vault_kv_proxmox_secret_path" {
   description = "Path under the Vault KV v2 mount holding Proxmox credentials"
   type        = string
-  default     = "proxmox"
+  default     = "services/proxmox/terraform"
 }
 
 variable "vault_kv_cloudflare_secret_path" {
   description = "Path under the Vault KV v2 mount holding Cloudflare credentials"
   type        = string
-  default     = "cloudflare"
+  default     = "services/cloudflare/account-api"
 }
 
 variable "vault_kv_app_secret_path" {
-  description = "Path under the Vault KV v2 mount holding app-specific secrets"
+  description = "Minimal infrastructure-only KV: BACKEND_CONTAINER_PASSWORD, DB_CONTAINER_PASSWORD, CLOUDFLARE_ZONE_ID"
   type        = string
-  default     = "wallettracker.backend"
+  default     = "apps/wallettracker/infrastructure"
 }
 
-variable "vault_kv_app_common_secret_path" {
-  description = "Path under the Vault KV v2 mount holding app-shared secrets"
-  type        = string
-  default     = "wallettracker.common"
-}
 
 variable "proxmox_ip" {
   description = "Proxmox IP address"
