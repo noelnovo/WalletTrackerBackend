@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+# Preparation asset only. Installing this file does not authorize a service start.
+description="Official Vault Agent supervising native-wallettracker-api"
+supervisor=supervise-daemon
+command=/opt/hashicorp/vault/2.1.2/vault
+command_args="agent -config=/etc/vault-agent/native-wallettracker-api/config/agent.hcl"
+command_user=root:root
+pidfile=/run/native-wallettracker-api.pid
+respawn_delay=5
+respawn_max=0
+directory="/srv/WalletTrackerAPI/app"
+export DATABASE_NAME=wallet_tracker
+export WALLET_TRACKER_DB_HOST=10.2.0.202
+export WALLET_TRACKER_DB_USER=root
+export ENABLE_REGISTER=false
+export HOME=/root
+export USER=root
+depend() { need net; }
+start_pre() {
+  ulimit -c 0
+  umask 077
+  # Never inherit a shell/operator token over the configured scoped AppRole.
+  for vault_env_key in $(env | cut -d= -f1); do
+    case "$vault_env_key" in VAULT_*) unset "$vault_env_key" ;; esac
+  done
+  /bin/mkdir -p /run/vault-agent-native-wallettracker-api
+  /bin/chmod 0700 /run/vault-agent-native-wallettracker-api
+}

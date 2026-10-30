@@ -8,27 +8,7 @@ locals {
   repo_path = "/srv/WalletTrackerAPI"
   api_vmid  = proxmox_lxc.api.vmid
 
-  wallettracker_init = <<-INITEOF
-    #!/sbin/openrc-run
-    description="WalletTracker uWSGI"
-
-    directory="${local.repo_path}/app"
-    pidfile="/run/wallettracker.pid"
-    command="/srv/WalletTrackerAPI/app/.venv/bin/uwsgi"
-    command_args="--ini $${directory}/uwsgi.ini --logto2 /var/log/wallettracker.log"
-    command_background="yes"
-
-    export DATABASE_ROOT_PASSWORD="${data.vault_kv_secret_v2.app.data["MARIADB_ROOT_PASSWORD"]}"
-    export WALLET_TRACKER_DB_USER="root"
-    export WALLET_TRACKER_DB_HOST="${var.db_container_ip}"
-    export DATABASE_NAME="wallet_tracker"
-    export WALLET_TRACKER_SECRET="${data.vault_kv_secret_v2.app_common.data["SIGN_SECRET_WORD"]}"
-    export ENABLE_REGISTER="false"
-
-    start_pre() {
-      checkpath --directory --owner root:root $${pidfile%/*}
-    }
-  INITEOF
+  delivery_dir = "/var/lib/wallettracker-delivery/${local.api_vmid}"
 }
 
 resource "proxmox_lxc" "api" {
@@ -39,7 +19,7 @@ resource "proxmox_lxc" "api" {
   cores       = 1
   memory      = 512
   swap        = 512
-  nameserver  = "8.8.8.8"
+  nameserver  = "10.2.0.4"
   rootfs {
     storage = "local-lvm"
     size    = "4G"
@@ -66,20 +46,17 @@ resource "null_resource" "setup_api_in_container" {
     password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
   }
 
-  provisioner "file" {
-    content     = local.wallettracker_init
-    destination = "/tmp/wallettracker.init"
-  }
 
   provisioner "remote-exec" {
     inline = [
       <<-EOF
-      set -ex
+      set -eu
       pct exec ${local.api_vmid} -- apk update
       pct exec ${local.api_vmid} -- sh -c "apk add --no-cache git python3 py3-pip mariadb-dev gcc musl-dev python3-dev build-base linux-headers uv"
 
-      pct exec ${local.api_vmid} -- rm -rf ${local.repo_path}
-      pct exec ${local.api_vmid} -- git clone https://github.com/noelnovo/WalletTrackerBackend.git ${local.repo_path}
+      if ! pct exec ${local.api_vmid} -- test -d ${local.repo_path}/.git; then
+        pct exec ${local.api_vmid} -- git clone https://github.com/noelnovo/WalletTrackerBackend.git ${local.repo_path}
+      fi
 
       pct exec ${local.api_vmid} -- uv sync --no-dev --no-install-project --project ${local.repo_path}/app
 
@@ -88,14 +65,16 @@ resource "null_resource" "setup_api_in_container" {
       pct exec ${local.api_vmid} -- touch /var/log/wallettracker.log
       pct exec ${local.api_vmid} -- chmod 644 /var/log/wallettracker.log
 
-      pct push ${local.api_vmid} /tmp/wallettracker.init /etc/init.d/wallettracker
-      rm /tmp/wallettracker.init
-
-      pct exec ${local.api_vmid} -- chmod +x /etc/init.d/wallettracker
-      pct exec ${local.api_vmid} -- rc-update add wallettracker default
-      pct exec ${local.api_vmid} -- rc-service wallettracker start
+      install -d -m 0700 ${local.delivery_dir}
       EOF
     ]
+  }
+  provisioner "file" {
+    source      = "${path.module}/vault-agent/"
+    destination = local.delivery_dir
+  }
+  provisioner "remote-exec" {
+    inline = ["python3 ${local.delivery_dir}/install.py install-api --guest ${local.api_vmid} --db-host ${var.db_container_ip}"]
   }
 }
 
@@ -114,11 +93,18 @@ resource "null_resource" "deploy_api" {
   }
 
   provisioner "remote-exec" {
+    inline = ["install -d -m 0700 ${local.delivery_dir}"]
+  }
+  provisioner "file" {
+    source      = "${path.module}/vault-agent/"
+    destination = local.delivery_dir
+  }
+  provisioner "remote-exec" {
     inline = [
       <<-EOF
-      set -ex
+      set -eu
       pct exec ${local.api_vmid} -- git -C ${local.repo_path} fetch origin
-      pct exec ${local.api_vmid} -- git -C ${local.repo_path} reset --hard @{u}
+      pct exec ${local.api_vmid} -- git -C ${local.repo_path} merge --ff-only @{u}
 
       # mysqlclient has no musl wheel and must compile from source. setup_api_in_container
       # removes the toolchain after the first install and is not re-run on existing
@@ -128,9 +114,9 @@ resource "null_resource" "deploy_api" {
 
       pct exec ${local.api_vmid} -- uv sync --no-dev --no-install-project --project ${local.repo_path}/app
 
-      pct exec ${local.api_vmid} -- sh -c "export DATABASE_ROOT_PASSWORD='${data.vault_kv_secret_v2.app.data["MARIADB_ROOT_PASSWORD"]}'; export DATABASE_NAME='wallet_tracker'; export WALLET_TRACKER_DB_USER='root'; export WALLET_TRACKER_DB_HOST='${var.db_container_ip}'; ${local.repo_path}/app/.venv/bin/python ${local.repo_path}/app/migrate_all.py"
+      python3 ${local.delivery_dir}/install.py install-api --guest ${local.api_vmid} --db-host ${var.db_container_ip}
+      python3 ${local.delivery_dir}/install.py migrate --guest ${local.api_vmid} --db-guest ${proxmox_lxc.mariadb.vmid} --db-host ${var.db_container_ip}
 
-      pct exec ${local.api_vmid} -- rc-service wallettracker restart
       EOF
     ]
   }

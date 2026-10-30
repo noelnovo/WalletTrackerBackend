@@ -16,8 +16,8 @@ terraform {
 }
 
 provider "vault" {
-  address           = var.vault_addr
-  skip_child_token  = true
+  address          = var.vault_addr
+  skip_child_token = true
 }
 
 data "vault_kv_secret_v2" "proxmox" {
@@ -35,10 +35,7 @@ data "vault_kv_secret_v2" "app" {
   name  = var.vault_kv_app_secret_path
 }
 
-data "vault_kv_secret_v2" "app_common" {
-  mount = var.vault_kv_mount
-  name  = var.vault_kv_app_common_secret_path
-}
+# No application runtime/common/RSA payload is read into Terraform state.
 
 provider "cloudflare" {
   api_token = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_API_TOKEN"]

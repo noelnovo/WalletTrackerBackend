@@ -6,7 +6,7 @@ variable "api_public_hostname" {
 
 locals {
   cloudflare_tunnel_name = "wallettracker-api"
-  api_tunnel_id = try(cloudflare_zero_trust_tunnel_cloudflared.api[0].id, data.external.cloudflare_tunnel_api_exists.result.tunnel_id)
+  api_tunnel_id          = try(cloudflare_zero_trust_tunnel_cloudflared.api[0].id, data.external.cloudflare_tunnel_api_exists.result.tunnel_id)
 }
 
 data "external" "cloudflare_tunnel_api_exists" {
@@ -42,10 +42,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared" "api" {
   depends_on = [null_resource.deploy_api]
 }
 
-data "cloudflare_zero_trust_tunnel_cloudflared_token" "api" {
-  account_id = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_ACCOUNT_ID"]
-  tunnel_id  = local.api_tunnel_id
-}
+# Connector credentials are consumed only by native Vault Agent, never Terraform.
 
 resource "cloudflare_zero_trust_tunnel_cloudflared_config" "api" {
   account_id = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_ACCOUNT_ID"]
@@ -86,41 +83,17 @@ resource "null_resource" "setup_cloudflared" {
     password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
   }
 
-  provisioner "file" {
-    content     = <<-INITEOF
-      #!/sbin/openrc-run
-      name="cloudflared"
-      description="Cloudflare Tunnel"
-      command="/usr/bin/cloudflared"
-      command_args="tunnel run --token ${data.cloudflare_zero_trust_tunnel_cloudflared_token.api.token}"
-      command_background=true
-      supervise_daemon="yes"
-      pidfile="/run/cloudflared.pid"
-      output_log="/var/log/cloudflared.log"
-      error_log="/var/log/cloudflared.log"
-
-      depend() {
-        need net
-        after wallettracker
-      }
-      INITEOF
-    destination = "/tmp/cloudflared.init"
-  }
-
   provisioner "remote-exec" {
-    inline = [
-      <<-EOF
-      pct exec ${proxmox_lxc.api.vmid} -- wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /usr/bin/cloudflared
-      pct exec ${proxmox_lxc.api.vmid} -- chmod +x /usr/bin/cloudflared
-
-      pct push ${proxmox_lxc.api.vmid} /tmp/cloudflared.init /etc/init.d/cloudflared
-      rm /tmp/cloudflared.init
-
-      pct exec ${proxmox_lxc.api.vmid} -- chmod +x /etc/init.d/cloudflared
-      pct exec ${proxmox_lxc.api.vmid} -- rc-update add cloudflared default
-      pct exec ${proxmox_lxc.api.vmid} -- rc-service cloudflared start
-      EOF
-    ]
+    inline = ["install -d -m 0700 ${local.delivery_dir}"]
+  }
+  provisioner "file" {
+    source      = "${path.module}/vault-agent/"
+    destination = local.delivery_dir
+  }
+  provisioner "remote-exec" {
+    # Existing binary and protected AppRole bootstrap must already be present.
+    # An absent start marker fails closed, not an implicit provider/tunnel repair.
+    inline = ["python3 ${local.delivery_dir}/install.py install-tunnel --guest ${proxmox_lxc.api.vmid}"]
   }
 }
 

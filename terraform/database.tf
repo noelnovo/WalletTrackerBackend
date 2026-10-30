@@ -44,15 +44,15 @@ resource "null_resource" "ensure_mariadb_volume" {
 }
 
 resource "proxmox_lxc" "mariadb" {
-  depends_on   = [null_resource.ensure_mariadb_volume]
-  target_node  = var.target_node
-  hostname     = var.db_hostname
-  ostemplate   = "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"
-  password     = data.vault_kv_secret_v2.app.data["DB_CONTAINER_PASSWORD"]
-  cores        = 1
-  memory       = 512
-  swap         = 512
-  nameserver   = "8.8.8.8"
+  depends_on  = [null_resource.ensure_mariadb_volume]
+  target_node = var.target_node
+  hostname    = var.db_hostname
+  ostemplate  = "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"
+  password    = data.vault_kv_secret_v2.app.data["DB_CONTAINER_PASSWORD"]
+  cores       = 1
+  memory      = 512
+  swap        = 512
+  nameserver  = "8.8.8.8"
   rootfs {
     storage = "local-lvm"
     size    = "4G"
@@ -90,35 +90,18 @@ resource "null_resource" "setup_mariadb_in_container" {
   provisioner "remote-exec" {
     inline = [
       <<-EOF
-      set -ex
+      set -eu
       pct exec ${proxmox_lxc.mariadb.vmid} -- apk update
       pct exec ${proxmox_lxc.mariadb.vmid} -- apk add gettext mariadb mariadb-client
 
-      if [ ! -f "${var.db_volume}/ibdata1" ]; then
-        echo "[INFO] Initializing new MariaDB instance in ${var.db_volume}..."
-
-        pct exec ${proxmox_lxc.mariadb.vmid} -- rc-service mariadb stop || true
-        pct exec ${proxmox_lxc.mariadb.vmid} -- chown -R mysql:mysql /var/lib/mysql
-        pct exec ${proxmox_lxc.mariadb.vmid} -- chmod -R 770 /var/lib/mysql
-        pct exec ${proxmox_lxc.mariadb.vmid} -- mkdir -p /run/mysqld
-        pct exec ${proxmox_lxc.mariadb.vmid} -- chown mysql:mysql /run/mysqld
-
-        pct exec ${proxmox_lxc.mariadb.vmid} -- mariadb-install-db --user=mysql --datadir=/var/lib/mysql
-        pct exec ${proxmox_lxc.mariadb.vmid} -- rc-service mariadb start
-        pct exec ${proxmox_lxc.mariadb.vmid} -- rc-update add mariadb
-
-        pct exec ${proxmox_lxc.mariadb.vmid} -- mariadb -e "CREATE USER IF NOT EXISTS 'root'@'${var.api_container_ip}' IDENTIFIED BY '${data.vault_kv_secret_v2.app.data["MARIADB_ROOT_PASSWORD"]}'; GRANT ALL PRIVILEGES ON *.* TO 'root'@'${var.api_container_ip}' WITH GRANT OPTION; FLUSH PRIVILEGES;"
-
-        pct exec ${proxmox_lxc.mariadb.vmid} -- sed -i 's/^skip-networking/#skip-networking/' /etc/my.cnf.d/mariadb-server.cnf
-        pct exec ${proxmox_lxc.mariadb.vmid} -- sed -i 's/^#bind-address=.*/bind-address = ${var.db_container_ip}/' /etc/my.cnf.d/mariadb-server.cnf
-
-        pct exec ${proxmox_lxc.mariadb.vmid} -- rc-service mariadb restart
-
-        echo "[INFO] Database initialization complete."
-      else
-        echo "[INFO] Existing MariaDB data found within ${var.db_volume}, skipping initialization."
-        pct exec ${proxmox_lxc.mariadb.vmid} -- rc-service mariadb restart
+      # Existing native account state is authoritative. Never reset a role here.
+      if ! pct exec ${proxmox_lxc.mariadb.vmid} -- test -d /var/lib/mysql/mysql; then
+        echo "Fresh MariaDB requires separately approved native initialization/account bootstrap; refusing password fallback." >&2
+        exit 1
       fi
+      pct exec ${proxmox_lxc.mariadb.vmid} -- rc-service mariadb status
+      test "$(pct exec ${proxmox_lxc.mariadb.vmid} -- mariadb -Nse "SELECT COUNT(*) FROM mysql.global_priv WHERE User='root' AND Host='${var.api_container_ip}'")" = "1"
+
       EOF
     ]
   }
@@ -141,14 +124,11 @@ resource "null_resource" "deploy_mariadb" {
   provisioner "remote-exec" {
     inline = [
       <<-EOF
-      set -ex
-      if [ -f "${var.db_volume}/ibdata1" ]; then
-        pct exec ${proxmox_lxc.mariadb.vmid} -- sed -i 's/^#bind-address=.*/bind-address = ${var.db_container_ip}/' /etc/my.cnf.d/mariadb-server.cnf
-        pct exec ${proxmox_lxc.mariadb.vmid} -- mariadb -u root -e \
-          "ALTER USER 'root'@'${var.api_container_ip}' IDENTIFIED BY '${data.vault_kv_secret_v2.app.data["MARIADB_ROOT_PASSWORD"]}'; FLUSH PRIVILEGES;"
-      else
-        echo "[INFO] Fresh install detected, skipping ALTER USER."
-      fi
+      set -eu
+      # Read-only guard on each release. New or missing accounts fail closed.
+      pct exec ${proxmox_lxc.mariadb.vmid} -- test -d /var/lib/mysql/mysql
+      test "$(pct exec ${proxmox_lxc.mariadb.vmid} -- mariadb -Nse "SELECT COUNT(*) FROM mysql.global_priv WHERE User='root' AND Host='${var.api_container_ip}'")" = "1"
+
       EOF
     ]
   }
