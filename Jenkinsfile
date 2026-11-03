@@ -48,7 +48,7 @@ pipeline {
                 withCredentials([[$class: 'VaultTokenCredentialBinding', credentialsId: 'wallettracker-vault-token', vaultAddr: env.VAULT_ADDR]]) {
                     sh '''#!/bin/sh
                         set -eu
-                        /opt/hashicorp/vault/2.1.2/vault token renew -self >/dev/null 2>&1 || { echo 'Jenkins CI Vault token renewal failed'; exit 1; }
+                        /opt/hashicorp/vault/2.1.2/vault token renew >/dev/null 2>&1 || { echo 'Jenkins CI Vault token renewal failed'; exit 1; }
                         echo 'Jenkins CI Vault token renewed without exposing it'
                     '''
                 }

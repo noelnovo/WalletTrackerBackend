@@ -83,7 +83,8 @@ class PipelineTests(unittest.TestCase):
 
     def test_periodic_jenkins_token_renewal_is_not_a_deployment(self):
         source = (HERE.parent / 'Jenkinsfile').read_text()
-        self.assertIn('vault token renew -self >/dev/null 2>&1', source)
+        self.assertIn('vault token renew >/dev/null 2>&1', source)
+        self.assertNotIn('vault token renew -self', source)
         self.assertIn("when { expression { env.origin != 'credential-renewal' } }", source)
         workflow = (HERE.parent / '.github/workflows/cd.yml').read_text()
         self.assertIn("cron: '0 8 * * 1'", workflow)
