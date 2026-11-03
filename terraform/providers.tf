@@ -35,6 +35,16 @@ data "vault_kv_secret_v2" "app" {
   name  = var.vault_kv_app_secret_path
 }
 
+data "vault_kv_secret_v2" "api_root_password" {
+  mount = var.vault_kv_mount
+  name  = var.vault_kv_api_root_password_path
+}
+
+data "vault_kv_secret_v2" "database_root_password" {
+  mount = var.vault_kv_mount
+  name  = var.vault_kv_database_root_password_path
+}
+
 # No application runtime/common/RSA payload is read into Terraform state.
 
 provider "cloudflare" {

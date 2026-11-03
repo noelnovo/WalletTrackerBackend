@@ -46,9 +46,21 @@ variable "vault_kv_cloudflare_secret_path" {
 }
 
 variable "vault_kv_app_secret_path" {
-  description = "Minimal infrastructure-only KV: BACKEND_CONTAINER_PASSWORD, DB_CONTAINER_PASSWORD, CLOUDFLARE_ZONE_ID"
+  description = "Non-credential infrastructure settings, including CLOUDFLARE_ZONE_ID; LXC root passwords use dedicated host records"
   type        = string
   default     = "apps/wallettracker/infrastructure"
+}
+
+variable "vault_kv_api_root_password_path" {
+  description = "Canonical root-password record for the existing API LXC 101"
+  type        = string
+  default     = "hosts/proxmox/lxc-root-passwords/101"
+}
+
+variable "vault_kv_database_root_password_path" {
+  description = "Canonical root-password record for the existing database LXC 102"
+  type        = string
+  default     = "hosts/proxmox/lxc-root-passwords/102"
 }
 
 

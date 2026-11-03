@@ -50,7 +50,7 @@ resource "proxmox_lxc" "mariadb" {
   target_node = var.target_node
   hostname    = var.db_hostname
   ostemplate  = "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"
-  password    = data.vault_kv_secret_v2.app.data["DB_CONTAINER_PASSWORD"]
+  password    = data.vault_kv_secret_v2.database_root_password.data["ROOT_PASSWORD"]
   cores       = 1
   memory      = 512
   swap        = 512

@@ -15,7 +15,7 @@ resource "proxmox_lxc" "api" {
   target_node = var.target_node
   hostname    = var.api_hostname
   ostemplate  = "local:vztmpl/alpine-3.22-default_20250617_amd64.tar.xz"
-  password    = data.vault_kv_secret_v2.app.data["BACKEND_CONTAINER_PASSWORD"]
+  password    = data.vault_kv_secret_v2.api_root_password.data["ROOT_PASSWORD"]
   cores       = 1
   memory      = 512
   swap        = 512

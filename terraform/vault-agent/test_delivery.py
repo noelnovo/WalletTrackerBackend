@@ -9,7 +9,9 @@ class DeliveryTests(unittest.TestCase):
   text='\n'.join(p.read_text() for p in TF.glob('*.tf'))
   for forbidden in ['MARIADB_ROOT_PASSWORD','SIGN_SECRET_WORD','data.vault_kv_secret_v2.app_common','export DATABASE_ROOT_PASSWORD','cloudflare_zero_trust_tunnel_cloudflared_token','--token ']:self.assertNotIn(forbidden,text)
   used=set(re.findall(r'data\.vault_kv_secret_v2\.app\.data\["([A-Z_]+)"\]',text))
-  self.assertEqual(used,{'BACKEND_CONTAINER_PASSWORD','DB_CONTAINER_PASSWORD','CLOUDFLARE_ZONE_ID'})
+  self.assertEqual(used,{'CLOUDFLARE_ZONE_ID'})
+  self.assertIn('data.vault_kv_secret_v2.api_root_password.data["ROOT_PASSWORD"]',text)
+  self.assertIn('data.vault_kv_secret_v2.database_root_password.data["ROOT_PASSWORD"]',text)
   self.assertIn('apps/wallettracker/infrastructure',text)
  def test_native_database_guard_has_no_password_ddl(self):
   text=(TF/'database.tf').read_text()
