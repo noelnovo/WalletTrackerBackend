@@ -21,7 +21,7 @@
       "role_type": "jwt",
       "user_claim": "repository_id",
       "bound_audiences": ["https://vault.downops.win"],
-      "bound_subject": "repo:noelnovo/WalletTrackerBackend:pull_request",
+      "bound_subject": "repo:noelnovo@128699907/WalletTrackerBackend@910129138:pull_request",
       "bound_claims_type": "glob",
       "bound_claims": {
         "repository_id": "910129138",
@@ -40,7 +40,7 @@
       "role_type": "jwt",
       "user_claim": "repository_id",
       "bound_audiences": ["https://vault.downops.win"],
-      "bound_subject": "repo:noelnovo/WalletTrackerBackend:ref:refs/heads/main",
+      "bound_subject": "repo:noelnovo@128699907/WalletTrackerBackend@910129138:ref:refs/heads/main",
       "bound_claims_type": "string",
       "bound_claims": {
         "repository_id": "910129138",
