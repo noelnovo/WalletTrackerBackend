@@ -43,3 +43,42 @@ def test_unversioned_database_is_not_silently_stamped():
             migrate_all.migrate_app(app, 'unused', mock.Mock())
         stamp.assert_not_called()
         upgrade.assert_not_called()
+
+
+def test_real_tenant_alembic_upgrade_accepts_structured_url(keys, tmp_path, monkeypatch):
+    from flask_migrate import upgrade
+    from sqlalchemy import inspect, text
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'private_key.pem').write_text(keys['private'])
+    (tmp_path / 'public_key.pem').write_text(keys['public'])
+    target = URL.create('sqlite', database=str(tmp_path / 'tenant-migration.db'))
+    app = create_app(database_uri=target)
+    with app.app_context():
+        upgrade(directory=migrate_all.TENANT_MIGRATIONS_DIR)
+        assert set(inspect(db.engine).get_table_names()) == {
+            'Expense', 'ExpenseCategory', 'Importe', 'Season', 'alembic_version'
+        }
+        assert db.session.execute(text('SELECT version_num FROM alembic_version')).scalar() == 'c34bd55b3ea7'
+
+
+def test_tenant_alembic_url_preserves_password_percent_characters(app, monkeypatch):
+    import runpy
+    from alembic import context
+    from alembic.config import Config
+    from flask_migrate import Migrate
+    from sqlalchemy.engine import make_url
+    Migrate(app, db)
+    target = URL.create('mysql', username='synthetic-user', password='synthetic:p%@ss/word#',
+                        host='db.invalid', database='wallet_tracker_u1')
+    monkeypatch.setitem(app.config, 'SQLALCHEMY_DATABASE_URI', target)
+    config = Config()
+    monkeypatch.setattr(context, 'config', config, raising=False)
+    with app.app_context(), \
+         mock.patch.object(context, 'is_offline_mode', return_value=True), \
+         mock.patch.object(context, 'configure'), \
+         mock.patch.object(context, 'begin_transaction'), \
+         mock.patch.object(context, 'run_migrations'):
+        runpy.run_path(str(__import__('pathlib').Path(migrate_all.TENANT_MIGRATIONS_DIR) / 'env.py'))
+    rendered = make_url(config.get_main_option('sqlalchemy.url'))
+    assert rendered.password == target.password
+    assert rendered.database == target.database
