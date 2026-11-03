@@ -51,31 +51,27 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('services/harbor/urls', text)
         self.assertIn('https://vault.int.downops.win', text)
 
-    def test_github_cd_propagates_jenkins_failure(self):
+    def test_github_cd_rejects_unmatched_webhook(self):
         spec = importlib.util.spec_from_file_location('jenkins_cd', HERE.parent / '.github/scripts/jenkins_cd.py')
         driver = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(driver)
-        environment = {'JENKINS_HOSTNAME': 'jenkins.example.invalid', 'JENKINS_USERNAME': 'test',
-                       'JENKINS_API_TOKEN': 'synthetic-secret', 'SOURCE_BRANCH': 'main',
-                       'SOURCE_REVISION': 'a' * 40, 'APPLY': 'false'}
+        environment = {'JENKINS_WEBHOOK_URL': 'https://jenkins.example.invalid/generic-webhook-trigger/invoke',
+                       'JENKINS_CD_SECRET': 'synthetic-secret', 'SOURCE_BRANCH': 'main',
+                       'SOURCE_REVISION': 'a' * 40}
         trigger = mock.MagicMock()
-        trigger.__enter__.return_value.headers = {'Location': 'https://jenkins.example.invalid/queue/item/1/'}
-        queue = mock.MagicMock()
-        queue.__enter__.return_value.read.return_value = b'{"executable":{"number":1,"url":"https://jenkins.example.invalid/job/wallettracker_cd/1/"}}'
-        build = mock.MagicMock()
-        build.__enter__.return_value.read.return_value = b'{"building":false,"result":"FAILURE"}'
+        trigger.__enter__.return_value.read.return_value = b'{"jobs":{}}'
         opener = mock.Mock()
-        opener.open.side_effect = [trigger, queue, build]
+        opener.open.return_value = trigger
         with mock.patch.dict(driver.os.environ, environment, clear=True), \
              mock.patch.object(driver.urllib.request, 'build_opener', return_value=opener), \
              contextlib.redirect_stdout(io.StringIO()):
-            with self.assertRaisesRegex(RuntimeError, 'finished with FAILURE'):
+            with self.assertRaisesRegex(RuntimeError, 'did not trigger wallettracker_cd'):
                 driver.main()
 
     def test_oidc_scopes_exclude_application_credentials(self):
         import json
         contract = json.loads((HERE.parent / '.github/vault-auth.json').read_text())
-        self.assertEqual(contract['policies']['wallettracker-cd'], ['downops/data/services/jenkins/api'])
+        self.assertEqual(contract['policies']['wallettracker-cd'], ['downops/data/services/jenkins/webhooks/instance-001'])
         for name, role in contract['roles'].items():
             self.assertTrue(role['token_no_default_policy'])
             self.assertEqual(role['token_type'], 'batch')

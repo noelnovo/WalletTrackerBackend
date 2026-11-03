@@ -28,7 +28,10 @@ pipeline {
                 // Preserve the sole Jenkins Terraform workspace and its local state.
                 git branch: 'main', url: 'https://github.com/noelnovo/WalletTrackerBackend.git'
                 script {
-                    env.SOURCE_REVISION = params.SOURCE_REVISION ?: sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    env.SOURCE_REVISION = params.SOURCE_REVISION ?: env.CORRELATION_ID ?: sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    if (!(env.SOURCE_REVISION ==~ /[0-9a-f]{40}/)) {
+                        error('Resolved source revision must be a full commit SHA')
+                    }
                 }
                 sh '''#!/bin/sh
                     set -eu

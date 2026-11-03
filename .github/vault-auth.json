@@ -7,14 +7,15 @@
   "source": "downops/data/apps/wallettracker/provisioning",
   "projections": {
     "downops/data/services/dependency-track/clients/instance-001": ["DT_API_KEY", "DT_PROJECT_UUID", "DT_URL"],
-    "downops/data/services/sonarqube/clients/instance-001": ["SONAR_TOKEN", "SONAR_HOST_URL"]
+    "downops/data/services/sonarqube/clients/instance-001": ["SONAR_TOKEN", "SONAR_HOST_URL"],
+    "downops/data/services/jenkins/webhooks/instance-001": ["JENKINS_CD_SECRET"]
   },
   "policies": {
     "wallettracker-scan": [
       "downops/data/services/dependency-track/clients/instance-001",
       "downops/data/services/sonarqube/clients/instance-001"
     ],
-    "wallettracker-cd": ["downops/data/services/jenkins/api"]
+    "wallettracker-cd": ["downops/data/services/jenkins/webhooks/instance-001"]
   },
   "roles": {
     "wallettracker-scan": {

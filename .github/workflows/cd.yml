@@ -1,14 +1,9 @@
-name: CD
+name: Request Jenkins CD plan
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      apply:
-        description: Request production deployment (also requires Jenkins approval)
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -18,9 +13,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  jenkins-cd:
+  request-jenkins-plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 5
     permissions:
       contents: read
       id-token: write
@@ -37,7 +32,7 @@ jobs:
             });
             core.setOutput('skip', prs.data.some(pr => pr.labels.some(l => l.name === 'skip cd')));
 
-      - name: Fetch Jenkins credentials from Vault
+      - name: Fetch scoped webhook credential from Vault
         if: steps.check-label.outputs.skip != 'true'
         uses: hashicorp/vault-action@v4
         with:
@@ -47,14 +42,15 @@ jobs:
           role: wallettracker-cd
           jwtGithubAudience: https://vault.downops.win
           secrets: |
-            downops/data/services/jenkins/api JENKINS_API_TOKEN ;
-            downops/data/services/jenkins/api JENKINS_HOSTNAME ;
-            downops/data/services/jenkins/api JENKINS_USERNAME
+            downops/data/services/jenkins/webhooks/instance-001 JENKINS_CD_SECRET
 
-      - name: Run Jenkins plan or approved deployment and verify its result
+      # The public route exposes only Generic Webhook Trigger, not Jenkins APIs.
+      # Success here means request accepted; the actual result is owned by Jenkins.
+      # Production apply is requested/approved inside the internal Jenkins job.
+      - name: Request Jenkins plan (not deployment result)
         if: steps.check-label.outputs.skip != 'true'
         env:
           SOURCE_REVISION: ${{ github.sha }}
           SOURCE_BRANCH: ${{ github.ref_name }}
-          APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply && 'true' || 'false' }}
+          JENKINS_WEBHOOK_URL: https://jenkins.downops.win/generic-webhook-trigger/invoke
         run: python3 .github/scripts/jenkins_cd.py
