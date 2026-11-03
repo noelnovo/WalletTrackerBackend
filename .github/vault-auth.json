@@ -1,5 +1,29 @@
 {
   "auth_mount": "github-actions",
+  "jenkins_approle": {
+    "name": "jenkins-wallettracker-ci",
+    "policy": "jenkins-wallettracker-ci",
+    "credential_id": "wallettracker-vault-token",
+    "bootstrap_path": "downops/data/services/jenkins/ci-auth/instance-001",
+    "read_paths": [
+      "downops/data/apps/wallettracker/infrastructure",
+      "downops/data/services/proxmox/terraform",
+      "downops/data/services/cloudflare/account-api",
+      "downops/data/services/proxmox/jenkins-ssh",
+      "downops/data/services/harbor/ci/instance-001",
+      "downops/data/services/harbor/urls"
+    ],
+    "role_config": {
+      "bind_secret_id": true,
+      "secret_id_ttl": 0,
+      "secret_id_num_uses": 0,
+      "token_policies": ["jenkins-wallettracker-ci"],
+      "token_no_default_policy": true,
+      "token_type": "service",
+      "token_ttl": 3600,
+      "token_max_ttl": 86400
+    }
+  },
   "jenkins_ssh": {
     "path": "downops/data/services/proxmox/jenkins-ssh",
     "policy": "wallettracker-backend",
@@ -16,7 +40,8 @@
   "projections": {
     "downops/data/services/dependency-track/clients/instance-001": ["DT_API_KEY", "DT_PROJECT_UUID", "DT_URL"],
     "downops/data/services/sonarqube/clients/instance-001": ["SONAR_TOKEN", "SONAR_HOST_URL"],
-    "downops/data/services/jenkins/webhooks/instance-001": ["JENKINS_CD_SECRET"]
+    "downops/data/services/jenkins/webhooks/instance-001": ["JENKINS_CD_SECRET"],
+    "downops/data/services/harbor/ci/instance-001": ["HARBOR_ROBOT_NAME", "HARBOR_ROBOT_SECRET"]
   },
   "policies": {
     "wallettracker-scan": [

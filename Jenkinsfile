@@ -43,13 +43,14 @@ pipeline {
                 '''
             }
         }
-        stage('Renew CI Vault authentication') {
+        // The installed Vault plugin logs in with the scoped AppRole at job time.
+        stage('Verify CI Vault authentication') {
             steps {
                 withCredentials([[$class: 'VaultTokenCredentialBinding', credentialsId: 'wallettracker-vault-token', vaultAddr: env.VAULT_ADDR]]) {
                     sh '''#!/bin/sh
                         set -eu
                         /opt/hashicorp/vault/2.1.2/vault token renew >/dev/null 2>&1 || { echo 'Jenkins CI Vault token renewal failed'; exit 1; }
-                        echo 'Jenkins CI Vault token renewed without exposing it'
+                        echo 'Short-lived Jenkins CI Vault authentication verified'
                     '''
                 }
             }
@@ -89,7 +90,7 @@ pipeline {
                             if (params.APPLY) {
                                 input message: "Apply the reviewed WalletTracker plan for ${env.SOURCE_REVISION}? This backs up MariaDB and briefly stops API LXC 101 for migrations; database LXC 102 is not replaced.", ok: 'Approve production deployment'
                                 withVault(configuration: [vaultUrl: env.VAULT_ADDR, vaultCredentialId: 'wallettracker-vault-token', engineVersion: 2], vaultSecrets: [
-                                    [path: 'downops/apps/wallettracker/provisioning', engineVersion: 2, secretValues: [
+                                    [path: 'downops/services/harbor/ci/instance-001', engineVersion: 2, secretValues: [
                                         [envVar: 'DOCKER_USERNAME', vaultKey: 'HARBOR_ROBOT_NAME'],
                                         [envVar: 'DOCKER_PASSWORD', vaultKey: 'HARBOR_ROBOT_SECRET']]],
                                     [path: 'downops/services/harbor/urls', engineVersion: 2, secretValues: [[envVar: 'REGISTRY', vaultKey: 'HARBOR_INTERNAL_URL']]]

@@ -81,7 +81,7 @@ class PipelineTests(unittest.TestCase):
             self.assertNotIn('provisioning', path)
             self.assertNotIn('runtime', path)
 
-    def test_periodic_jenkins_token_renewal_is_not_a_deployment(self):
+    def test_weekly_jenkins_authentication_probe_is_not_a_deployment(self):
         source = (HERE.parent / 'Jenkinsfile').read_text()
         self.assertIn('vault token renew >/dev/null 2>&1', source)
         self.assertNotIn('vault token renew -self', source)
@@ -99,6 +99,18 @@ class PipelineTests(unittest.TestCase):
     def test_public_readiness_uses_existing_edge_compatible_user_agent(self):
         source = (HERE.parent / 'Jenkinsfile').read_text()
         self.assertIn("headers={'User-Agent': 'Mozilla/5.0'}", source)
+
+    def test_jenkins_approle_has_no_broad_provisioning_or_runtime_read(self):
+        import json
+        contract = json.loads((HERE.parent / '.github/vault-auth.json').read_text())['jenkins_approle']
+        self.assertTrue(contract['role_config']['token_no_default_policy'])
+        self.assertEqual(contract['role_config']['token_ttl'], 3600)
+        for path in contract['read_paths']:
+            self.assertNotIn('provisioning', path)
+            self.assertNotIn('/runtime', path)
+            self.assertNotIn('/rsa', path)
+        source = (HERE.parent / 'Jenkinsfile').read_text()
+        self.assertNotIn("path: 'downops/apps/wallettracker/provisioning'", source)
 
 
 if __name__ == '__main__':
