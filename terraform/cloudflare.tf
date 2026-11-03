@@ -65,6 +65,7 @@ resource "null_resource" "setup_cloudflared" {
     private_key = file(var.proxmox_ssh_identity_file)
     host_key    = var.proxmox_ssh_host_key
     agent       = false
+    timeout     = "30s"
   }
 
   provisioner "remote-exec" {
