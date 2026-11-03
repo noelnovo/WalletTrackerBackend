@@ -47,11 +47,11 @@ def create_app(database_uri=None):
     app.config['ENABLE_REGISTER'] = enable_register
     app.config['PRIVATE_KEY'] = open('private_key.pem', 'r').read()
     app.config['PUBLIC_KEY'] = open('public_key.pem', 'r').read()
-    connectionString = database_uri if database_uri is not None else URL.create(
+    connection_string = database_uri if database_uri is not None else URL.create(
         "mysql", username=DATABASE_USERNAME, password=DATABASE_PASSWORD,
         host=DATABASE_HOST, database=DATABASE_NAME,
     )
-    app.config['SQLALCHEMY_DATABASE_URI'] = connectionString   
+    app.config['SQLALCHEMY_DATABASE_URI'] = connection_string
 
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -65,4 +65,3 @@ def create_app(database_uri=None):
     app.register_blueprint(importe_bp)
 
     return app
-
