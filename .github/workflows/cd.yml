@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Renewal-only Jenkins run, independent of source pushes; never applies TF.
+    - cron: '0 8 * * 1'
 
 permissions:
   contents: read
@@ -53,4 +56,5 @@ jobs:
           SOURCE_REVISION: ${{ github.sha }}
           SOURCE_BRANCH: ${{ github.ref_name }}
           JENKINS_WEBHOOK_URL: https://jenkins.downops.win/generic-webhook-trigger/invoke
+          REQUEST_ORIGIN: ${{ github.event_name == 'schedule' && 'credential-renewal' || 'github' }}
         run: python3 .github/scripts/jenkins_cd.py

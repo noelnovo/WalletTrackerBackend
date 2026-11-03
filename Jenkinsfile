@@ -43,7 +43,19 @@ pipeline {
                 '''
             }
         }
+        stage('Renew CI Vault authentication') {
+            steps {
+                withCredentials([[$class: 'VaultTokenCredentialBinding', credentialsId: 'wallettracker-vault-token', vaultAddr: env.VAULT_ADDR]]) {
+                    sh '''#!/bin/sh
+                        set -eu
+                        /opt/hashicorp/vault/2.1.2/vault token renew -self >/dev/null 2>&1 || { echo 'Jenkins CI Vault token renewal failed'; exit 1; }
+                        echo 'Jenkins CI Vault token renewed without exposing it'
+                    '''
+                }
+            }
+        }
         stage('Plan and approved deployment') {
+            when { expression { env.origin != 'credential-renewal' } }
             steps {
                 script {
                     withCredentials([[$class: 'VaultTokenCredentialBinding', credentialsId: 'wallettracker-vault-token', vaultAddr: env.VAULT_ADDR]]) {

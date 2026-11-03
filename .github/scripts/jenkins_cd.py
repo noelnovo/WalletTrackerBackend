@@ -13,7 +13,7 @@ def main():
     if not re.fullmatch(r'[0-9a-f]{40}', revision):
         raise RuntimeError('Invalid source revision')
     request = urllib.request.Request(os.environ['JENKINS_WEBHOOK_URL'],
-        data=json.dumps({'origin': 'github', 'CORRELATION_ID': revision}).encode(),
+        data=json.dumps({'origin': os.environ.get('REQUEST_ORIGIN', 'github'), 'CORRELATION_ID': revision}).encode(),
         headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0',
                  'token': os.environ['JENKINS_CD_SECRET']})
     # Never forward the webhook credential through an HTTP redirect.
