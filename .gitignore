@@ -5,10 +5,15 @@ __pycache__
 .env/
 app/.pytest.env
 .venv/
-uv.lock
 *.pem
 *.log
 testing/
 .pytest_cache
 dependency-check-report/
-
+terraform/.terraform/
+terraform/*.tfstate*
+terraform/*.tfplan
+terraform/*.private.json
+terraform/*.private.log
+terraform/*.private
+vault-env.properties

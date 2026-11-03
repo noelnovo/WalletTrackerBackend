@@ -1,3 +1,26 @@
+variable "proxmox_ssh_identity_file" {
+  description = "Protected job-time private key file rendered from Vault; never commit it"
+  type        = string
+}
+
+variable "proxmox_ssh_host_key" {
+  description = "Trusted Proxmox SSH host public key obtained through the existing management channel"
+  type        = string
+  validation {
+    condition     = can(regex("^ssh-ed25519 ", var.proxmox_ssh_host_key))
+    error_message = "A verified Proxmox ed25519 host public key is required."
+  }
+}
+
+variable "source_revision" {
+  description = "Exact tested Git commit to deploy; supplied by Jenkins"
+  type        = string
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.source_revision))
+    error_message = "source_revision must be a full immutable Git commit SHA."
+  }
+}
+
 variable "vault_addr" {
   description = "Vault server address"
   type        = string

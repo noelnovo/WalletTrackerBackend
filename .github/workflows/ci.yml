@@ -4,9 +4,48 @@ on:
   pull_request:
     branches: [main]
 
+# Runs targeting the same DT project must queue: the SonarQube DT plugin reads
+# live DT findings, so parallel PRs would pollute each other's quality gate.
+concurrency:
+  group: dt-scan-${{ vars.DT_PROJECT_UUID || github.repository }}
+  cancel-in-progress: false
+
 jobs:
+  delivery-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 terraform/vault-agent/test_delivery.py
+      - run: python3 -m unittest discover -s terraform -p 'test_*.py'
+
+  lockfile-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Verify uv.lock is in sync
+        run: |
+          cd app
+          if uv lock --check; then
+            echo "uv.lock is in sync with pyproject.toml."
+          else
+            echo "::error::app/uv.lock is out of sync with app/pyproject.toml."
+            echo "::error::Regenerate it locally and commit both files:"
+            echo "::error::  git checkout ${{ github.head_ref }}"
+            echo "::error::  cd app && uv lock"
+            echo "::error::  git add pyproject.toml uv.lock && git commit -m \"Regenerate lock\" && git push"
+            exit 1
+          fi
+
   python-tests:
     runs-on: ubuntu-latest
+    needs: [lockfile-check]
 
     steps:
       - uses: actions/checkout@v4
@@ -41,9 +80,112 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
-  security-checks:
+  sbom:
     runs-on: ubuntu-latest
-    needs: [python-tests]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Show PR dependency sources (debug)
+        run: |
+          echo "PR HEAD SHA: ${{ github.event.pull_request.head.sha }}"
+          echo "--- app/pyproject.toml (jwt lines) ---"
+          grep -in "jwt" app/pyproject.toml || true
+          echo "--- app/uv.lock (pyjwt pin) ---"
+          grep -B1 -A2 'name = "pyjwt"' app/uv.lock | head -20 || true
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies (frozen)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libmariadb-dev pkg-config
+          cd app
+          uv sync --frozen
+
+      - name: Generate CycloneDX SBOM with Syft (installed venv keeps licenses)
+        run: |
+          # uv.lock carries no license data, so scanning the source dir yields
+          # licenseless components; the installed venv lets Syft read each
+          # wheel's METADATA instead. Keep libraries only: a raw venv scan
+          # also lists files/binaries as components.
+          docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app/.venv -o cyclonedx-json \
+            | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json" | .components |= map(select(.type == "library"))' > bom.json
+          echo "--- SBOM jwt components (must match PR commit) ---"
+          jq -c '.components[] | select(.name | test("jwt"; "i")) | {name, version, purl, licenses}' bom.json || true
+          echo "--- SBOM license coverage ---"
+          echo "components with licenses: $(jq '[.components[] | select(.licenses != null)] | length' bom.json)/$(jq '.components | length' bom.json)"
+          echo "--- components still without licenses ---"
+          jq -c '.components[] | select(.licenses == null) | {name, version}' bom.json || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: bom.json
+
+  dependency-track:
+    needs: [sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+      - name: Fetch scan settings using short-lived GitHub OIDC
+        uses: hashicorp/vault-action@v4
+        with:
+          url: https://vault.downops.win
+          method: jwt
+          path: github-actions
+          role: wallettracker-scan
+          jwtGithubAudience: https://vault.downops.win
+          secrets: |
+            downops/data/services/dependency-track/clients/instance-001 DT_URL ;
+            downops/data/services/dependency-track/clients/instance-001 DT_PROJECT_UUID ;
+            downops/data/services/dependency-track/clients/instance-001 DT_API_KEY
+      - name: Resolve Dependency-Track hostname
+        run: |
+          host="${DT_URL#https://}"
+          host="${host%%/*}"
+          echo "DT_HOST=$host" >> "$GITHUB_ENV"
+      - name: Submit SBOM with the Dependency-Track maintained action
+        id: upload
+        uses: DependencyTrack/gh-upload-sbom@v4.3.0
+        with:
+          server-hostname: ${{ env.DT_HOST }}
+          api-key: ${{ env.DT_API_KEY }}
+          project: ${{ env.DT_PROJECT_UUID }}
+          bom-filename: bom.json
+      - name: Wait for SBOM analysis before SonarQube
+        env:
+          BOM_TOKEN: ${{ steps.upload.outputs.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            # Credentials go through stdin config, never curl argv or output.
+            processing=$(printf 'header = "X-Api-Key: %s"\n' "$DT_API_KEY" | curl --config - -fsS --max-time 30 "$DT_URL/api/v1/bom/token/$BOM_TOKEN" | jq -r '.processing')
+            if [ "$processing" = false ]; then
+              echo 'Dependency-Track SBOM analysis completed'
+              exit 0
+            fi
+            [ "$processing" = true ] || { echo 'Unexpected analysis status'; exit 1; }
+            sleep 5
+          done
+          echo 'Dependency-Track analysis timed out'
+          exit 1
+
+  sonarqube:
+    runs-on: ubuntu-latest
+    needs: [python-tests, dependency-track]
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -52,61 +194,18 @@ jobs:
         with:
           name: coverage-report
 
-      - name: Fetch secrets from Vault
+      - name: Fetch SonarQube secrets from Vault
         uses: hashicorp/vault-action@v4
         with:
           url: https://vault.downops.win
-          token: ${{ secrets.VAULT_TOKEN }}
+          method: jwt
+          path: github-actions
+          role: wallettracker-scan
+          jwtGithubAudience: https://vault.downops.win
           secrets: |
-            downops/data/apps/wallettracker/provisioning SONAR_TOKEN ;
-            downops/data/apps/wallettracker/provisioning SONAR_HOST_URL ;
-            downops/data/apps/wallettracker/provisioning DT_URL ;
-            downops/data/apps/wallettracker/provisioning DT_API_KEY ;
-            downops/data/apps/wallettracker/provisioning DT_PROJECT_UUID ;
-            downops/data/apps/wallettracker/provisioning NVD_API_KEY
+            downops/data/services/sonarqube/clients/instance-001 SONAR_TOKEN ;
+            downops/data/services/sonarqube/clients/instance-001 SONAR_HOST_URL
 
-      - name: Generate SBOM with Syft
-        run: |
-          docker run --rm -v "$(pwd):/workspace" anchore/syft dir:/workspace/app -o cyclonedx-json \
-            | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json"' > bom.json
-
-      - if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sbom
-          path: bom.json
-
-      - name: Submit SBOM to Dependency Track
-        id: sbom
-        run: |
-          BODY_FILE=$(mktemp)
-          jq -n --arg project "$DT_PROJECT_UUID" --rawfile bom bom.json \
-            '{project: $project, bom: ($bom | @base64)}' > "$BODY_FILE"
-          HTTP_RESPONSE=$(mktemp)
-          HTTP_STATUS=$(curl -sS --max-time 120 -X "PUT" "$DT_URL/api/v1/bom" \
-            -H "Content-Type: application/json" \
-            -H "X-Api-Key: $DT_API_KEY" \
-            -d @"$BODY_FILE" \
-            -w "%{http_code}" \
-            -o "$HTTP_RESPONSE") || true
-          rm -f "$BODY_FILE"
-
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "::warning::Dependency Track returned HTTP $HTTP_STATUS"
-            echo "Response:"
-            cat "$HTTP_RESPONSE" || echo "(empty)"
-            echo "bom-token=" >> "$GITHUB_OUTPUT"
-          else
-            BOM_TOKEN=$(jq -r '.token' "$HTTP_RESPONSE" 2>/dev/null || echo "")
-            if [ -z "$BOM_TOKEN" ] || [ "$BOM_TOKEN" = "null" ]; then
-              echo "::warning::Failed to extract BOM token from DT response"
-              cat "$HTTP_RESPONSE"
-              echo "bom-token=" >> "$GITHUB_OUTPUT"
-            else
-              echo "bom-token=$BOM_TOKEN" >> "$GITHUB_OUTPUT"
-            fi
-          fi
-          rm -f "$HTTP_RESPONSE"
       - run: ls -la coverage.xml && head -100 coverage.xml
 
       - name: SonarQube Analysis
@@ -123,18 +222,3 @@ jobs:
           SONAR_HOST_URL: ${{ env.SONAR_HOST_URL }}
         with:
           pollingTimeoutSec: 300
-
-      # - name: OWASP Dependency Check
-      #   continue-on-error: true
-      #   run: |
-      #     mkdir -p dependency-check-report
-      #     docker run --rm \
-      #       -v "$(pwd):/src" \
-      #       -v "$(pwd)/dependency-check-report:/report" \
-      #       owasp/dependency-check:12.2.2 \
-      #       --scan /src/app/pyproject.toml \
-      #       --enableExperimental \
-      #       --project "wallet-tracker-api" \
-      #       --format JSON \
-      #       --out /report \
-      #       --nvdApiKey "${{ env.NVD_API_KEY }}"
