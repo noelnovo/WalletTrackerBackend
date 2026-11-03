@@ -96,6 +96,10 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(source.count('connection {'), source.count('private_key = file(var.proxmox_ssh_identity_file)'))
             self.assertEqual(source.count('connection {'), source.count('host_key    = var.proxmox_ssh_host_key'))
 
+    def test_public_readiness_uses_existing_edge_compatible_user_agent(self):
+        source = (HERE.parent / 'Jenkinsfile').read_text()
+        self.assertIn("headers={'User-Agent': 'Mozilla/5.0'}", source)
+
 
 if __name__ == '__main__':
     unittest.main()

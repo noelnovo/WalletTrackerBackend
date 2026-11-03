@@ -120,7 +120,8 @@ pipeline {
                                     set -eu
                                     python3 - <<'PY'
 import json, urllib.request
-with urllib.request.urlopen('https://api.downops.win/api/v1/ready', timeout=30) as response:
+request = urllib.request.Request('https://api.downops.win/api/v1/ready', headers={'User-Agent': 'Mozilla/5.0'})
+with urllib.request.urlopen(request, timeout=30) as response:
     assert response.status == 200 and json.load(response)['success'] is True
 print('Public API and database readiness verified')
 PY
