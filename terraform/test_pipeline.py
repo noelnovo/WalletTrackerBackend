@@ -112,6 +112,14 @@ class PipelineTests(unittest.TestCase):
         source = (HERE.parent / 'Jenkinsfile').read_text()
         self.assertNotIn("path: 'downops/apps/wallettracker/provisioning'", source)
 
+    def test_guest_boot_and_database_mount_are_preserved(self):
+        for name in ['backend.tf', 'database.tf']:
+            self.assertRegex((HERE / name).read_text(), r'onboot\s*=\s*true')
+        source = (HERE / 'database.tf').read_text()
+        self.assertIn('ignore_changes = [mountpoint]', source)
+        self.assertIn('Live MariaDB bind mount differs from approved source; deployment refused', source)
+        self.assertIn('pvesh get /nodes/${var.target_node}/lxc/', source)
+
 
 if __name__ == '__main__':
     unittest.main()

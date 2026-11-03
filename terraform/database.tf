@@ -73,9 +73,13 @@ resource "proxmox_lxc" "mariadb" {
     mp      = "/var/lib/mysql"
     size    = "10G"
   }
-  start = true
+  onboot = true
+  start  = true
   lifecycle {
     prevent_destroy = true
+    # This is an existing native MariaDB bind mount, not a resizable TF disk.
+    # Never rewrite it during app releases; the release guard below checks it.
+    ignore_changes = [mountpoint]
   }
 }
 
@@ -132,6 +136,7 @@ resource "null_resource" "deploy_mariadb" {
       <<-EOF
       set -eu
       # Read-only guard on each release. New or missing accounts fail closed.
+      pvesh get /nodes/${var.target_node}/lxc/${proxmox_lxc.mariadb.vmid}/config --output-format json | python3 -c 'import json,sys; config=json.load(sys.stdin); parts=config.get("mp1", "").split(","); sys.exit(0 if parts[0] == "${var.db_volume}" and "mp=/var/lib/mysql" in parts else "Live MariaDB bind mount differs from approved source; deployment refused")'
       pct exec ${proxmox_lxc.mariadb.vmid} -- test -d /var/lib/mysql/mysql
       test "$(pct exec ${proxmox_lxc.mariadb.vmid} -- mariadb -Nse "SELECT COUNT(*) FROM mysql.global_priv WHERE User='root' AND Host='${var.api_container_ip}'")" = "1"
 
