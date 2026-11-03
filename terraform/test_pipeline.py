@@ -51,6 +51,25 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('services/harbor/urls', text)
         self.assertIn('https://vault.int.downops.win', text)
 
+    def test_root_password_readers_use_dedicated_per_lxc_records(self):
+        import json
+        variables = (HERE / 'variables.tf').read_text()
+        providers = (HERE / 'providers.tf').read_text()
+        self.assertIn('hosts/proxmox/lxc-root-passwords/101', variables)
+        self.assertIn('hosts/proxmox/lxc-root-passwords/102', variables)
+        self.assertIn('var.vault_kv_api_root_password_path', providers)
+        self.assertIn('var.vault_kv_database_root_password_path', providers)
+        self.assertIn('data.vault_kv_secret_v2.api_root_password.data["ROOT_PASSWORD"]', (HERE / 'backend.tf').read_text())
+        self.assertIn('data.vault_kv_secret_v2.database_root_password.data["ROOT_PASSWORD"]', (HERE / 'database.tf').read_text())
+        for file in ('providers.tf', 'variables.tf', 'backend.tf', 'database.tf'):
+            text = (HERE / file).read_text()
+            self.assertNotIn('BACKEND_CONTAINER_PASSWORD', text)
+            self.assertNotIn('DB_CONTAINER_PASSWORD', text)
+        paths = json.loads((HERE.parent / '.github/vault-auth.json').read_text())['jenkins_approle']['read_paths']
+        self.assertIn('downops/data/hosts/proxmox/lxc-root-passwords/101', paths)
+        self.assertIn('downops/data/hosts/proxmox/lxc-root-passwords/102', paths)
+        self.assertFalse(any('lxc-root-passwords/*' in path for path in paths))
+
     def test_github_cd_rejects_unmatched_webhook(self):
         spec = importlib.util.spec_from_file_location('jenkins_cd', HERE.parent / '.github/scripts/jenkins_cd.py')
         driver = importlib.util.module_from_spec(spec)
