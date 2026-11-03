@@ -30,7 +30,8 @@ resource "proxmox_lxc" "api" {
     gw     = "10.2.0.1"
     ip     = "${var.api_container_ip}/24"
   }
-  start = true
+  onboot = true
+  start  = true
   lifecycle {
     prevent_destroy = true
   }
