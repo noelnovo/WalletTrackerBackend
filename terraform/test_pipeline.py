@@ -83,7 +83,8 @@ class PipelineTests(unittest.TestCase):
 
     def test_periodic_jenkins_token_renewal_is_not_a_deployment(self):
         source = (HERE.parent / 'Jenkinsfile').read_text()
-        self.assertIn('vault token renew -self >/dev/null 2>&1', source)
+        self.assertIn('vault token renew >/dev/null 2>&1', source)
+        self.assertNotIn('vault token renew -self', source)
         self.assertIn("when { expression { env.origin != 'credential-renewal' } }", source)
         workflow = (HERE.parent / '.github/workflows/cd.yml').read_text()
         self.assertIn("cron: '0 8 * * 1'", workflow)
@@ -94,6 +95,10 @@ class PipelineTests(unittest.TestCase):
             self.assertNotIn('password = data.vault_kv_secret_v2.proxmox', source)
             self.assertEqual(source.count('connection {'), source.count('private_key = file(var.proxmox_ssh_identity_file)'))
             self.assertEqual(source.count('connection {'), source.count('host_key    = var.proxmox_ssh_host_key'))
+
+    def test_public_readiness_uses_existing_edge_compatible_user_agent(self):
+        source = (HERE.parent / 'Jenkinsfile').read_text()
+        self.assertIn("headers={'User-Agent': 'Mozilla/5.0'}", source)
 
 
 if __name__ == '__main__':

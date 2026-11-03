@@ -48,7 +48,7 @@ pipeline {
                 withCredentials([[$class: 'VaultTokenCredentialBinding', credentialsId: 'wallettracker-vault-token', vaultAddr: env.VAULT_ADDR]]) {
                     sh '''#!/bin/sh
                         set -eu
-                        /opt/hashicorp/vault/2.1.2/vault token renew -self >/dev/null 2>&1 || { echo 'Jenkins CI Vault token renewal failed'; exit 1; }
+                        /opt/hashicorp/vault/2.1.2/vault token renew >/dev/null 2>&1 || { echo 'Jenkins CI Vault token renewal failed'; exit 1; }
                         echo 'Jenkins CI Vault token renewed without exposing it'
                     '''
                 }
@@ -120,7 +120,8 @@ pipeline {
                                     set -eu
                                     python3 - <<'PY'
 import json, urllib.request
-with urllib.request.urlopen('https://api.downops.win/api/v1/ready', timeout=30) as response:
+request = urllib.request.Request('https://api.downops.win/api/v1/ready', headers={'User-Agent': 'Mozilla/5.0'})
+with urllib.request.urlopen(request, timeout=30) as response:
     assert response.status == 200 and json.load(response)['success'] is True
 print('Public API and database readiness verified')
 PY
