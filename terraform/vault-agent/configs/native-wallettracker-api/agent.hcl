@@ -23,7 +23,7 @@ env_template "DATABASE_ROOT_PASSWORD" {
   error_on_missing_key = true
 }
 env_template "WALLET_TRACKER_SECRET" {
-  contents = "{{ with secret \"downops/data/apps/wallettracker/runtime\" }}{{ .Data.data.WALLET_TRACKER_SECRET }}{{ end }}"
+  contents = "{{ with secret \"downops/data/apps/wallettracker/signing\" }}{{ .Data.data.SIGN_SECRET_WORD }}{{ end }}"
   error_on_missing_key = true
 }
 env_template "PRIVATE_KEY_BASE64" {
