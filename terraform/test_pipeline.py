@@ -140,5 +140,13 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('pvesh get /nodes/${var.target_node}/lxc/', source)
 
 
+    def test_native_terraform_negotiated_host_key_is_supported_and_fails_fast(self):
+        self.assertIn('ecdsa-sha2-nistp256', (HERE / 'variables.tf').read_text())
+        self.assertIn('required_version = "= 1.15.5"', (HERE / 'providers.tf').read_text())
+        for name in ['backend.tf', 'database.tf', 'cloudflare.tf']:
+            source = (HERE / name).read_text()
+            self.assertEqual(source.count('connection {'), source.count('timeout     = "30s"'))
+
+
 if __name__ == '__main__':
     unittest.main()
