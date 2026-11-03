@@ -32,6 +32,8 @@
     "comment": "jenkins-wallettracker-ci",
     "private_key_name": "PROXMOX_SSH_PRIVATE_KEY",
     "host_public_key_name": "PROXMOX_SSH_HOST_PUBLIC_KEY",
+    "host_public_key_algorithm": "ecdsa-sha2-nistp256",
+    "terraform_version": "1.15.5",
     "authorization": "existing Jenkins Terraform root deployment reach; public key addition only"
   },
   "auth_config": {

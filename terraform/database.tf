@@ -30,6 +30,7 @@ resource "null_resource" "ensure_mariadb_volume" {
     private_key = file(var.proxmox_ssh_identity_file)
     host_key    = var.proxmox_ssh_host_key
     agent       = false
+    timeout     = "30s"
   }
   provisioner "remote-exec" {
     inline = [
@@ -93,6 +94,7 @@ resource "null_resource" "setup_mariadb_in_container" {
     private_key = file(var.proxmox_ssh_identity_file)
     host_key    = var.proxmox_ssh_host_key
     agent       = false
+    timeout     = "30s"
   }
 
   provisioner "remote-exec" {
@@ -129,6 +131,7 @@ resource "null_resource" "deploy_mariadb" {
     private_key = file(var.proxmox_ssh_identity_file)
     host_key    = var.proxmox_ssh_host_key
     agent       = false
+    timeout     = "30s"
   }
 
   provisioner "remote-exec" {
