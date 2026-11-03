@@ -1,0 +1,59 @@
+{
+  "auth_mount": "github-actions",
+  "auth_config": {
+    "oidc_discovery_url": "https://token.actions.githubusercontent.com",
+    "bound_issuer": "https://token.actions.githubusercontent.com"
+  },
+  "source": "downops/data/apps/wallettracker/provisioning",
+  "projections": {
+    "downops/data/services/dependency-track/clients/instance-001": ["DT_API_KEY", "DT_PROJECT_UUID", "DT_URL"],
+    "downops/data/services/sonarqube/clients/instance-001": ["SONAR_TOKEN", "SONAR_HOST_URL"]
+  },
+  "policies": {
+    "wallettracker-scan": [
+      "downops/data/services/dependency-track/clients/instance-001",
+      "downops/data/services/sonarqube/clients/instance-001"
+    ],
+    "wallettracker-cd": ["downops/data/services/jenkins/api"]
+  },
+  "roles": {
+    "wallettracker-scan": {
+      "role_type": "jwt",
+      "user_claim": "repository_id",
+      "bound_audiences": ["https://vault.downops.win"],
+      "bound_subject": "repo:noelnovo/WalletTrackerBackend:pull_request",
+      "bound_claims_type": "glob",
+      "bound_claims": {
+        "repository_id": "910129138",
+        "repository_owner_id": "128699907",
+        "actor_id": "128699907",
+        "event_name": "pull_request",
+        "workflow_ref": "noelnovo/WalletTrackerBackend/.github/workflows/ci.yml@refs/pull/*/merge"
+      },
+      "token_policies": ["wallettracker-scan"],
+      "token_no_default_policy": true,
+      "token_type": "batch",
+      "token_ttl": 900,
+      "token_max_ttl": 900
+    },
+    "wallettracker-cd": {
+      "role_type": "jwt",
+      "user_claim": "repository_id",
+      "bound_audiences": ["https://vault.downops.win"],
+      "bound_subject": "repo:noelnovo/WalletTrackerBackend:ref:refs/heads/main",
+      "bound_claims_type": "string",
+      "bound_claims": {
+        "repository_id": "910129138",
+        "repository_owner_id": "128699907",
+        "actor_id": "128699907",
+        "ref": "refs/heads/main",
+        "workflow_ref": "noelnovo/WalletTrackerBackend/.github/workflows/cd.yml@refs/heads/main"
+      },
+      "token_policies": ["wallettracker-cd"],
+      "token_no_default_policy": true,
+      "token_type": "batch",
+      "token_ttl": 900,
+      "token_max_ttl": 900
+    }
+  }
+}

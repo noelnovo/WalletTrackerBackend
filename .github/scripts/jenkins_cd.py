@@ -34,7 +34,7 @@ def main():
         url = urllib.parse.urljoin(base, path)
         if urllib.parse.urlsplit(url).netloc != host or not url.startswith(base + '/'):
             raise RuntimeError('Unexpected Jenkins URL')
-        req = urllib.request.Request(url, data=data, headers={'Authorization': 'Basic ' + credential})
+        req = urllib.request.Request(url, data=data, headers={'Authorization': 'Basic ' + credential, 'User-Agent': 'Mozilla/5.0'})
         try:
             return opener.open(req, timeout=30)
         except urllib.error.HTTPError as error:

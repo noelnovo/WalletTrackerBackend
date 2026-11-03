@@ -72,6 +72,19 @@ class PipelineTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'finished with FAILURE'):
                 driver.main()
 
+    def test_oidc_scopes_exclude_application_credentials(self):
+        import json
+        contract = json.loads((HERE.parent / '.github/vault-auth.json').read_text())
+        self.assertEqual(contract['policies']['wallettracker-cd'], ['downops/data/services/jenkins/api'])
+        for name, role in contract['roles'].items():
+            self.assertTrue(role['token_no_default_policy'])
+            self.assertEqual(role['token_type'], 'batch')
+            self.assertEqual(role['bound_claims']['repository_id'], '910129138')
+            self.assertEqual(role['token_max_ttl'], 900)
+        for path in contract['policies']['wallettracker-scan']:
+            self.assertNotIn('provisioning', path)
+            self.assertNotIn('runtime', path)
+
 
 if __name__ == '__main__':
     unittest.main()

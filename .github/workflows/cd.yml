@@ -21,6 +21,9 @@ jobs:
   jenkins-cd:
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -36,10 +39,13 @@ jobs:
 
       - name: Fetch Jenkins credentials from Vault
         if: steps.check-label.outputs.skip != 'true'
-        uses: hashicorp/vault-action@v3
+        uses: hashicorp/vault-action@v4
         with:
           url: https://vault.downops.win
-          token: ${{ secrets.VAULT_TOKEN }}
+          method: jwt
+          path: github-actions
+          role: wallettracker-cd
+          jwtGithubAudience: https://vault.downops.win
           secrets: |
             downops/data/services/jenkins/api JENKINS_API_TOKEN ;
             downops/data/services/jenkins/api JENKINS_HOSTNAME ;
