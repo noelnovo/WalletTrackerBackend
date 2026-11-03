@@ -10,29 +10,11 @@ locals {
 }
 
 data "external" "cloudflare_tunnel_api_exists" {
-  program = [
-    "bash", "-lc",
-    <<-EOT
-      set -euo pipefail
-      account_id='${data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_ACCOUNT_ID"]}'
-      token='${data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_API_TOKEN"]}'
-
-      if [ -z "$account_id" ] || [ -z "$token" ]; then
-        echo '{"exists":"false","tunnel_id":""}'
-        exit 0
-      fi
-
-      response=$(curl -fsS \
-        -H "Authorization: Bearer $token" \
-        -H "Content-Type: application/json" \
-        "https://api.cloudflare.com/client/v4/accounts/$account_id/cfd_tunnel")
-
-      exists=$(printf '%s' "$response" | python3 -c 'import json,sys; data=json.load(sys.stdin); print("true" if any(item.get("name") == "wallettracker-api" for item in data.get("result", [])) else "false")')
-      tunnel_id=$(printf '%s' "$response" | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next((item.get("id", "") for item in data.get("result", []) if item.get("name") == "wallettracker-api"), ""))')
-
-      printf '{"exists":"%s","tunnel_id":"%s"}\n' "$exists" "$tunnel_id"
-    EOT
-  ]
+  program = ["python3", "${path.module}/find_tunnel.py"]
+  query = {
+    account_id = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_ACCOUNT_ID"]
+    token      = data.vault_kv_secret_v2.cloudflare.data["CLOUDFLARE_API_TOKEN"]
+  }
 }
 
 resource "cloudflare_zero_trust_tunnel_cloudflared" "api" {
@@ -77,10 +59,12 @@ resource "null_resource" "setup_cloudflared" {
   depends_on = [null_resource.deploy_api, cloudflare_zero_trust_tunnel_cloudflared.api]
 
   connection {
-    type     = "ssh"
-    host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
+    type        = "ssh"
+    host        = var.proxmox_ip
+    user        = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    private_key = file(var.proxmox_ssh_identity_file)
+    host_key    = var.proxmox_ssh_host_key
+    agent       = false
   }
 
   provisioner "remote-exec" {

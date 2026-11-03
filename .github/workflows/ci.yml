@@ -11,6 +11,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  delivery-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 terraform/vault-agent/test_delivery.py
+      - run: python3 -m unittest discover -s terraform -p 'test_*.py'
+
   lockfile-check:
     runs-on: ubuntu-latest
 
@@ -119,25 +126,66 @@ jobs:
           name: sbom
           path: bom.json
 
-  # Shared DT scan, defined once in noelnovo/.github; consumes the sbom artifact above.
   dependency-track:
     needs: [sbom]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
-    uses: noelnovo/.github/.github/workflows/dependency-track-scan.yml@main
-    with:
-      sbom-artifact-name: sbom
-      sbom-filename: bom.json
-      dt-url: ${{ vars.DT_URL }}
-      dt-project-uuid: ${{ vars.DT_PROJECT_UUID }}
-      vault-secret-path: downops/data/apps/wallettracker/provisioning
-    secrets:
-      DT_API_KEY: ${{ secrets.DT_API_KEY }}
-      VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+      - name: Fetch scan settings using short-lived GitHub OIDC
+        uses: hashicorp/vault-action@v4
+        with:
+          url: https://vault.downops.win
+          method: jwt
+          path: github-actions
+          role: wallettracker-scan
+          jwtGithubAudience: https://vault.downops.win
+          secrets: |
+            downops/data/services/dependency-track/clients/instance-001 DT_URL ;
+            downops/data/services/dependency-track/clients/instance-001 DT_PROJECT_UUID ;
+            downops/data/services/dependency-track/clients/instance-001 DT_API_KEY
+      - name: Resolve Dependency-Track hostname
+        run: |
+          host="${DT_URL#https://}"
+          host="${host%%/*}"
+          echo "DT_HOST=$host" >> "$GITHUB_ENV"
+      - name: Submit SBOM with the Dependency-Track maintained action
+        id: upload
+        uses: DependencyTrack/gh-upload-sbom@v4.3.0
+        with:
+          server-hostname: ${{ env.DT_HOST }}
+          api-key: ${{ env.DT_API_KEY }}
+          project: ${{ env.DT_PROJECT_UUID }}
+          bom-filename: bom.json
+      - name: Wait for SBOM analysis before SonarQube
+        env:
+          BOM_TOKEN: ${{ steps.upload.outputs.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            # Credentials go through stdin config, never curl argv or output.
+            processing=$(printf 'header = "X-Api-Key: %s"\n' "$DT_API_KEY" | curl --config - -fsS --max-time 30 "$DT_URL/api/v1/bom/token/$BOM_TOKEN" | jq -r '.processing')
+            if [ "$processing" = false ]; then
+              echo 'Dependency-Track SBOM analysis completed'
+              exit 0
+            fi
+            [ "$processing" = true ] || { echo 'Unexpected analysis status'; exit 1; }
+            sleep 5
+          done
+          echo 'Dependency-Track analysis timed out'
+          exit 1
 
   sonarqube:
     runs-on: ubuntu-latest
     needs: [python-tests, dependency-track]
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -150,10 +198,13 @@ jobs:
         uses: hashicorp/vault-action@v4
         with:
           url: https://vault.downops.win
-          token: ${{ secrets.VAULT_TOKEN }}
+          method: jwt
+          path: github-actions
+          role: wallettracker-scan
+          jwtGithubAudience: https://vault.downops.win
           secrets: |
-            downops/data/apps/wallettracker/provisioning SONAR_TOKEN ;
-            downops/data/apps/wallettracker/provisioning SONAR_HOST_URL
+            downops/data/services/sonarqube/clients/instance-001 SONAR_TOKEN ;
+            downops/data/services/sonarqube/clients/instance-001 SONAR_HOST_URL
 
       - run: ls -la coverage.xml && head -100 coverage.xml
 

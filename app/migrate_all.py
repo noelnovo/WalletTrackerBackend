@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import URL, create_engine, text
 from sqlalchemy.exc import OperationalError
 from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
@@ -26,7 +26,7 @@ TENANT_PREFIX         = f"{DATABASE_NAME}_u"
 
 def ensure_database_exists():
     """Connect to MySQL server and create DB if missing"""
-    server_url = f"mysql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}"
+    server_url = database_url(None)
     engine = create_engine(server_url)
 
     with engine.connect() as conn:
@@ -60,9 +60,13 @@ def stamp_head(engine, migrations_dir):
         conn.commit()
 
 
+def database_url(db_name):
+    return URL.create("mysql", username=DATABASE_USERNAME, password=DATABASE_PASSWORD,
+                      host=DATABASE_HOST, database=db_name)
+
+
 def get_engine(db_name):
-    url = f"mysql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}/{db_name}"
-    return create_engine(url)
+    return create_engine(database_url(db_name))
 
 
 def get_tenant_databases(engine):
@@ -84,8 +88,7 @@ def needs_stamp(engine):
 def migrate_app(app, migrations_dir, engine):
     with app.app_context():
         if needs_stamp(engine):
-            print("[migrate_all] Pre-Alembic DB detected, stamping head...")
-            stamp_head(engine, migrations_dir)
+            raise RuntimeError("Unversioned existing database requires an approved baseline; refusing to stamp head")
 
         migrate_upgrade(directory=migrations_dir)
 
@@ -118,18 +121,18 @@ def main():
         try:
             tenant_engine = get_engine(db_name)
 
-            tenant_app = create_app()
-            tenant_app.config["SQLALCHEMY_DATABASE_URI"] = (
-                f"mysql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}/{db_name}"
-            )
+            # Flask-SQLAlchemy binds the engine at init_app, not at first use.
+            tenant_app = create_app(database_uri=database_url(db_name))
 
             migrate_app(tenant_app, TENANT_MIGRATIONS_DIR, tenant_engine)
 
-            tenant_engine.dispose()
             print(f"[migrate_all]   [OK] {db_name}")
 
-        except Exception as e:
-            print(f"[migrate_all]   [ERROR] {db_name}: {e}")
+        except Exception:
+            raise RuntimeError("Tenant migration failed; deployment must not report success") from None
+        finally:
+            if 'tenant_engine' in locals():
+                tenant_engine.dispose()
 
     print("[migrate_all] Done.")
 

@@ -1,0 +1,68 @@
+{
+  "auth_mount": "github-actions",
+  "jenkins_ssh": {
+    "path": "downops/data/services/proxmox/jenkins-ssh",
+    "policy": "wallettracker-backend",
+    "comment": "jenkins-wallettracker-ci",
+    "private_key_name": "PROXMOX_SSH_PRIVATE_KEY",
+    "host_public_key_name": "PROXMOX_SSH_HOST_PUBLIC_KEY",
+    "authorization": "existing Jenkins Terraform root deployment reach; public key addition only"
+  },
+  "auth_config": {
+    "oidc_discovery_url": "https://token.actions.githubusercontent.com",
+    "bound_issuer": "https://token.actions.githubusercontent.com"
+  },
+  "source": "downops/data/apps/wallettracker/provisioning",
+  "projections": {
+    "downops/data/services/dependency-track/clients/instance-001": ["DT_API_KEY", "DT_PROJECT_UUID", "DT_URL"],
+    "downops/data/services/sonarqube/clients/instance-001": ["SONAR_TOKEN", "SONAR_HOST_URL"],
+    "downops/data/services/jenkins/webhooks/instance-001": ["JENKINS_CD_SECRET"]
+  },
+  "policies": {
+    "wallettracker-scan": [
+      "downops/data/services/dependency-track/clients/instance-001",
+      "downops/data/services/sonarqube/clients/instance-001"
+    ],
+    "wallettracker-cd": ["downops/data/services/jenkins/webhooks/instance-001"]
+  },
+  "roles": {
+    "wallettracker-scan": {
+      "role_type": "jwt",
+      "user_claim": "repository_id",
+      "bound_audiences": ["https://vault.downops.win"],
+      "bound_subject": "repo:noelnovo@128699907/WalletTrackerBackend@910129138:pull_request",
+      "bound_claims_type": "glob",
+      "bound_claims": {
+        "repository_id": "910129138",
+        "repository_owner_id": "128699907",
+        "actor_id": "128699907",
+        "event_name": "pull_request",
+        "workflow_ref": "noelnovo/WalletTrackerBackend/.github/workflows/ci.yml@refs/pull/*/merge"
+      },
+      "token_policies": ["wallettracker-scan"],
+      "token_no_default_policy": true,
+      "token_type": "batch",
+      "token_ttl": 900,
+      "token_max_ttl": 900
+    },
+    "wallettracker-cd": {
+      "role_type": "jwt",
+      "user_claim": "repository_id",
+      "bound_audiences": ["https://vault.downops.win"],
+      "bound_subject": "repo:noelnovo@128699907/WalletTrackerBackend@910129138:ref:refs/heads/main",
+      "bound_claims_type": "string",
+      "bound_claims": {
+        "repository_id": "910129138",
+        "repository_owner_id": "128699907",
+        "actor_id": "128699907",
+        "ref": "refs/heads/main",
+        "workflow_ref": "noelnovo/WalletTrackerBackend/.github/workflows/cd.yml@refs/heads/main"
+      },
+      "token_policies": ["wallettracker-cd"],
+      "token_no_default_policy": true,
+      "token_type": "batch",
+      "token_ttl": 900,
+      "token_max_ttl": 900
+    }
+  }
+}

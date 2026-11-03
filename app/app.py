@@ -1,6 +1,7 @@
 import os
 from flask import Flask
 from flask_migrate import Migrate
+from sqlalchemy import URL
 from endpoints.ExpenseEndpoints import expense_bp
 from endpoints.ExpenseCategoryEndpoints import expensecategory_bp
 from endpoints.AuthenticationEndpoints import auth_bp
@@ -33,7 +34,7 @@ def create_app_test(test_config=None):
 
     return app
 
-def create_app():
+def create_app(database_uri=None):
 
     app = Flask(__name__)
     log_path = os.path.join(os.path.dirname(__file__), "logs", "app.log")
@@ -46,8 +47,11 @@ def create_app():
     app.config['ENABLE_REGISTER'] = enable_register
     app.config['PRIVATE_KEY'] = open('private_key.pem', 'r').read()
     app.config['PUBLIC_KEY'] = open('public_key.pem', 'r').read()
-    connectionString = f'mysql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}/{DATABASE_NAME}'
-    app.config['SQLALCHEMY_DATABASE_URI'] = connectionString   
+    connection_string = database_uri if database_uri is not None else URL.create(
+        "mysql", username=DATABASE_USERNAME, password=DATABASE_PASSWORD,
+        host=DATABASE_HOST, database=DATABASE_NAME,
+    )
+    app.config['SQLALCHEMY_DATABASE_URI'] = connection_string
 
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -61,5 +65,3 @@ def create_app():
     app.register_blueprint(importe_bp)
 
     return app
-
-
