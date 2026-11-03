@@ -6,6 +6,8 @@
     "credential_id": "wallettracker-vault-token",
     "bootstrap_path": "downops/data/services/jenkins/ci-auth/instance-001",
     "read_paths": [
+      "downops/data/hosts/proxmox/lxc-root-passwords/101",
+      "downops/data/hosts/proxmox/lxc-root-passwords/102",
       "downops/data/apps/wallettracker/infrastructure",
       "downops/data/services/proxmox/terraform",
       "downops/data/services/cloudflare/account-api",
