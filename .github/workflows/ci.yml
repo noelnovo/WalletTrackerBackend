@@ -65,6 +65,30 @@ jobs:
 
       - run: docker compose up -d --build
 
+      - name: Exercise real main and tenant MariaDB migrations
+        run: |
+          docker compose exec -T -e DATABASE_NAME=wallettracker_migration_ci app uv run python - <<'PY'
+          from sqlalchemy import inspect, text
+          from migrate_all import main, get_engine
+
+          main()
+          engine = get_engine('wallettracker_migration_ci')
+          with engine.begin() as connection:
+              connection.execute(text('CREATE DATABASE IF NOT EXISTS wallettracker_migration_ci_u1'))
+          engine.dispose()
+          main()
+          main()  # A repeated release must be idempotent.
+          expected = {
+              'wallettracker_migration_ci': {'User', 'RefreshToken', 'alembic_version'},
+              'wallettracker_migration_ci_u1': {'Expense', 'ExpenseCategory', 'Importe', 'Season', 'alembic_version'},
+          }
+          for name, tables in expected.items():
+              engine = get_engine(name)
+              assert set(inspect(engine).get_table_names()) == tables
+              engine.dispose()
+          print('Real MariaDB main/tenant migrations and repeated upgrade verified')
+          PY
+
       - run: docker compose exec -T app uv run pytest --cov=. --cov-report=xml --cov-report=term -v
 
       - run: docker compose cp app:/app/coverage.xml ./coverage.xml && sed -i 's|<source>/app</source>|<source>app</source>|g; s|<source>\.</source>|<source>app</source>|g' coverage.xml

@@ -2,15 +2,17 @@ import os
 from alembic import context
 from flask import current_app
 from logging.config import fileConfig
+from sqlalchemy.engine import make_url
 
 config = context.config
 
 if config.config_file_name is not None and os.path.isfile(config.config_file_name):
     fileConfig(config.config_file_name)
 
+database_url = make_url(current_app.config["SQLALCHEMY_DATABASE_URI"])
 config.set_main_option(
     "sqlalchemy.url",
-    current_app.config["SQLALCHEMY_DATABASE_URI"]
+    database_url.render_as_string(hide_password=False).replace("%", "%%")
 )
 
 target_metadata = current_app.extensions["migrate"].db.metadata
