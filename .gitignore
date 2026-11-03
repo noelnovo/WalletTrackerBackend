@@ -15,4 +15,5 @@ terraform/*.tfstate*
 terraform/*.tfplan
 terraform/*.private.json
 terraform/*.private.log
+terraform/*.private
 vault-env.properties

@@ -1,5 +1,13 @@
 {
   "auth_mount": "github-actions",
+  "jenkins_ssh": {
+    "path": "downops/data/services/proxmox/jenkins-ssh",
+    "policy": "wallettracker-backend",
+    "comment": "jenkins-wallettracker-ci",
+    "private_key_name": "PROXMOX_SSH_PRIVATE_KEY",
+    "host_public_key_name": "PROXMOX_SSH_HOST_PUBLIC_KEY",
+    "authorization": "existing Jenkins Terraform root deployment reach; public key addition only"
+  },
   "auth_config": {
     "oidc_discovery_url": "https://token.actions.githubusercontent.com",
     "bound_issuer": "https://token.actions.githubusercontent.com"

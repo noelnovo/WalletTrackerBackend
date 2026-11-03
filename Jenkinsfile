@@ -59,6 +59,11 @@ pipeline {
             steps {
                 script {
                     withCredentials([[$class: 'VaultTokenCredentialBinding', credentialsId: 'wallettracker-vault-token', vaultAddr: env.VAULT_ADDR]]) {
+                      withVault(configuration: [vaultUrl: env.VAULT_ADDR, vaultCredentialId: 'wallettracker-vault-token', engineVersion: 2], vaultSecrets: [
+                          [path: 'downops/services/proxmox/jenkins-ssh', engineVersion: 2, secretValues: [
+                              [envVar: 'PROXMOX_SSH_PRIVATE_KEY', vaultKey: 'PROXMOX_SSH_PRIVATE_KEY'],
+                              [envVar: 'PROXMOX_SSH_HOST_PUBLIC_KEY', vaultKey: 'PROXMOX_SSH_HOST_PUBLIC_KEY']]]
+                      ]) {
                         dir('terraform') {
                             // Plan/state/logs are credential-bearing. Never archive or echo them.
                             sh '''#!/bin/sh
@@ -66,6 +71,10 @@ pipeline {
                                 umask 077
                                 test -s terraform.tfstate || { echo 'Existing production state required; refusing empty workspace'; exit 1; }
                                 chmod 600 terraform.tfstate
+                                printf '%s\n' "$PROXMOX_SSH_PRIVATE_KEY" > proxmox-ssh.private
+                                unset PROXMOX_SSH_PRIVATE_KEY
+                                export TF_VAR_proxmox_ssh_identity_file="$PWD/proxmox-ssh.private"
+                                export TF_VAR_proxmox_ssh_host_key="$PROXMOX_SSH_HOST_PUBLIC_KEY"
                                 export TF_VAR_source_revision="$SOURCE_REVISION"
                                 export TF_IN_AUTOMATION=1
                                 if ! terraform init -input=false -no-color > init.private.log 2>&1; then
@@ -100,6 +109,8 @@ pipeline {
                                         docker push "$IMAGE_NAME"
                                         docker rmi "$IMAGE_NAME"
                                         export TF_VAR_source_revision="$SOURCE_REVISION"
+                                        export TF_VAR_proxmox_ssh_identity_file="$PWD/proxmox-ssh.private"
+                                        export TF_VAR_proxmox_ssh_host_key="$PROXMOX_SSH_HOST_PUBLIC_KEY"
                                         if ! terraform apply -input=false -no-color release.tfplan > apply.private.log 2>&1; then
                                             echo 'Deployment failed; inspect protected workspace diagnostics; no automatic apply retry'; exit 1
                                         fi
@@ -118,6 +129,7 @@ PY
                                 echo 'Plan-only run: production was not changed'
                             }
                         }
+                      }
                     }
                 }
             }
@@ -127,7 +139,7 @@ PY
         always {
             sh '''#!/bin/sh
                 set -eu
-                for file in terraform/release.tfplan terraform/release.private.json; do
+                for file in terraform/release.tfplan terraform/release.private.json terraform/proxmox-ssh.private; do
                     if [ -f "$file" ]; then rm "$file"; fi
                 done
             '''

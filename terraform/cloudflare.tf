@@ -59,10 +59,12 @@ resource "null_resource" "setup_cloudflared" {
   depends_on = [null_resource.deploy_api, cloudflare_zero_trust_tunnel_cloudflared.api]
 
   connection {
-    type     = "ssh"
-    host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
+    type        = "ssh"
+    host        = var.proxmox_ip
+    user        = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    private_key = file(var.proxmox_ssh_identity_file)
+    host_key    = var.proxmox_ssh_host_key
+    agent       = false
   }
 
   provisioner "remote-exec" {

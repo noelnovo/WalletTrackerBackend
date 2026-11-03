@@ -24,10 +24,12 @@ resource "null_resource" "ensure_mariadb_volume" {
     db_volume = var.db_volume
   }
   connection {
-    type     = "ssh"
-    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
-    host     = var.proxmox_ip
-    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
+    type        = "ssh"
+    user        = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    host        = var.proxmox_ip
+    private_key = file(var.proxmox_ssh_identity_file)
+    host_key    = var.proxmox_ssh_host_key
+    agent       = false
   }
   provisioner "remote-exec" {
     inline = [
@@ -81,10 +83,12 @@ resource "null_resource" "setup_mariadb_in_container" {
   depends_on = [proxmox_lxc.mariadb]
 
   connection {
-    type     = "ssh"
-    host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
+    type        = "ssh"
+    host        = var.proxmox_ip
+    user        = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    private_key = file(var.proxmox_ssh_identity_file)
+    host_key    = var.proxmox_ssh_host_key
+    agent       = false
   }
 
   provisioner "remote-exec" {
@@ -115,10 +119,12 @@ resource "null_resource" "deploy_mariadb" {
   }
 
   connection {
-    type     = "ssh"
-    host     = var.proxmox_ip
-    user     = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
-    password = data.vault_kv_secret_v2.proxmox.data["PROXMOX_PASSWORD"]
+    type        = "ssh"
+    host        = var.proxmox_ip
+    user        = data.vault_kv_secret_v2.proxmox.data["PROXMOX_USER"]
+    private_key = file(var.proxmox_ssh_identity_file)
+    host_key    = var.proxmox_ssh_host_key
+    agent       = false
   }
 
   provisioner "remote-exec" {

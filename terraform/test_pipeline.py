@@ -88,6 +88,13 @@ class PipelineTests(unittest.TestCase):
         workflow = (HERE.parent / '.github/workflows/cd.yml').read_text()
         self.assertIn("cron: '0 8 * * 1'", workflow)
 
+    def test_proxmox_provisioners_use_key_only_and_pin_host_identity(self):
+        for name in ['backend.tf', 'database.tf', 'cloudflare.tf']:
+            source = (HERE / name).read_text()
+            self.assertNotIn('password = data.vault_kv_secret_v2.proxmox', source)
+            self.assertEqual(source.count('connection {'), source.count('private_key = file(var.proxmox_ssh_identity_file)'))
+            self.assertEqual(source.count('connection {'), source.count('host_key    = var.proxmox_ssh_host_key'))
+
 
 if __name__ == '__main__':
     unittest.main()
