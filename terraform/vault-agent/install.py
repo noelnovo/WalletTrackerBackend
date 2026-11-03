@@ -87,12 +87,24 @@ def migrate(g,db_guest,db_host):
   run(['pct','exec',str(g),'--','env','-i']+environment+['timeout','-s','TERM','-k','10','240',BIN,'agent','-config=/etc/vault-agent/'+API+'/config/migration.hcl'],timeout=270)
  finally:run(['pct','exec',str(g),'--','rc-service','wallettracker','start'])
  return saved
+def verify(g):
+ # Readiness is checked inside the guest, independently of the public connector.
+ probe="import urllib.request,json; r=urllib.request.urlopen('http://127.0.0.1:5000/api/v1/ready',timeout=5); assert r.status==200 and json.load(r)['success'] is True"
+ for attempt in range(30):
+  try:
+   run(['pct','exec',str(g),'--','python3','-c',probe],timeout=10)
+   if not active(g,'wallettracker'):raise RuntimeError('Managed API service is not active')
+   return
+  except (RuntimeError,subprocess.TimeoutExpired):
+   if attempt==29:raise RuntimeError('API database readiness did not recover after deployment') from None
+   time.sleep(2)
 def main():
- a=argparse.ArgumentParser(description=__doc__);a.add_argument('action',choices=['install-api','install-tunnel','migrate']);a.add_argument('--guest',type=int,required=True);a.add_argument('--db-guest',type=int);a.add_argument('--db-host',default='10.2.0.202');args=a.parse_args()
+ a=argparse.ArgumentParser(description=__doc__);a.add_argument('action',choices=['install-api','install-tunnel','migrate','verify']);a.add_argument('--guest',type=int,required=True);a.add_argument('--db-guest',type=int);a.add_argument('--db-host',default='10.2.0.202');args=a.parse_args()
  if os.getuid()!=0 or not re.fullmatch(r'[0-9.]+',args.db_host):raise RuntimeError('Root and validated numeric DB host required')
  if args.action=='migrate':
   if args.db_guest is None:a.error('--db-guest required')
   result={'action':args.action,'native_readonly_backup':migrate(args.guest,args.db_guest,args.db_host),'runtime_secrets_in_tf':False}
+ elif args.action=='verify':verify(args.guest);result={'action':args.action,'guest':args.guest,'ready':True}
  else:install(args.guest,API if args.action=='install-api' else CF,args.db_host);result={'action':args.action,'guest':args.guest,'runtime_secrets_in_tf':False}
  print(json.dumps(result))
 if __name__=='__main__':

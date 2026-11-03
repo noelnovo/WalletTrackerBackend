@@ -32,7 +32,7 @@ resource "proxmox_lxc" "api" {
   }
   start = true
   lifecycle {
-    create_before_destroy = true
+    prevent_destroy = true
   }
 }
 
@@ -58,7 +58,9 @@ resource "null_resource" "setup_api_in_container" {
         pct exec ${local.api_vmid} -- git clone https://github.com/noelnovo/WalletTrackerBackend.git ${local.repo_path}
       fi
 
-      pct exec ${local.api_vmid} -- uv sync --no-dev --no-install-project --project ${local.repo_path}/app
+      pct exec ${local.api_vmid} -- git -C ${local.repo_path} fetch origin
+      pct exec ${local.api_vmid} -- git -C ${local.repo_path} checkout --detach ${var.source_revision}
+      pct exec ${local.api_vmid} -- uv sync --frozen --no-dev --no-install-project --project ${local.repo_path}/app
 
       pct exec ${local.api_vmid} -- apk del gcc musl-dev build-base linux-headers
 
@@ -82,7 +84,8 @@ resource "null_resource" "deploy_api" {
   depends_on = [null_resource.setup_api_in_container, null_resource.deploy_mariadb]
 
   triggers = {
-    always_run = timestamp()
+    source_revision = var.source_revision
+    delivery_assets = sha256(join("", [for f in sort(tolist(fileset("${path.module}/vault-agent", "**"))) : filesha256("${path.module}/vault-agent/${f}")]))
   }
 
   connection {
@@ -103,8 +106,12 @@ resource "null_resource" "deploy_api" {
     inline = [
       <<-EOF
       set -eu
+      # Refuse to discard local edits (including untracked private inputs).
+      test -z "$(pct exec ${local.api_vmid} -- git -C ${local.repo_path} status --porcelain --untracked-files=no)"
       pct exec ${local.api_vmid} -- git -C ${local.repo_path} fetch origin
-      pct exec ${local.api_vmid} -- git -C ${local.repo_path} merge --ff-only @{u}
+      # Deploy exactly the revision tested/built by Jenkins, not whichever main
+      # happens to be newest when this provisioner starts.
+      pct exec ${local.api_vmid} -- git -C ${local.repo_path} checkout --detach ${var.source_revision}
 
       # mysqlclient has no musl wheel and must compile from source. setup_api_in_container
       # removes the toolchain after the first install and is not re-run on existing
@@ -112,10 +119,11 @@ resource "null_resource" "deploy_api" {
       # no-op once the toolchain is already present.
       pct exec ${local.api_vmid} -- sh -c 'command -v cc >/dev/null 2>&1 || apk add --no-cache build-base mariadb-dev python3-dev'
 
-      pct exec ${local.api_vmid} -- uv sync --no-dev --no-install-project --project ${local.repo_path}/app
+      pct exec ${local.api_vmid} -- uv sync --frozen --no-dev --no-install-project --project ${local.repo_path}/app
 
       python3 ${local.delivery_dir}/install.py install-api --guest ${local.api_vmid} --db-host ${var.db_container_ip}
       python3 ${local.delivery_dir}/install.py migrate --guest ${local.api_vmid} --db-guest ${proxmox_lxc.mariadb.vmid} --db-host ${var.db_container_ip}
+      python3 ${local.delivery_dir}/install.py verify --guest ${local.api_vmid}
 
       EOF
     ]

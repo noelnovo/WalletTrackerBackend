@@ -1,3 +1,12 @@
+variable "source_revision" {
+  description = "Exact tested Git commit to deploy; supplied by Jenkins"
+  type        = string
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.source_revision))
+    error_message = "source_revision must be a full immutable Git commit SHA."
+  }
+}
+
 variable "vault_addr" {
   description = "Vault server address"
   type        = string

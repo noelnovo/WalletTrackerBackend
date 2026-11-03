@@ -73,7 +73,7 @@ resource "proxmox_lxc" "mariadb" {
   }
   start = true
   lifecycle {
-    create_before_destroy = true
+    prevent_destroy = true
   }
 }
 
@@ -111,7 +111,7 @@ resource "null_resource" "deploy_mariadb" {
   depends_on = [null_resource.setup_mariadb_in_container]
 
   triggers = {
-    always_run = timestamp()
+    source_revision = var.source_revision
   }
 
   connection {
