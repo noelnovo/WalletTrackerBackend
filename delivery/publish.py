@@ -19,20 +19,31 @@ def main(env):
         command(['git','fetch','origin','main']);command(['git','merge-base','--is-ancestor',sha,'origin/main'])
     elif os.environ.get('CI_COMMIT_BRANCH')!='dev':raise RuntimeError('Dev publication must originate on dev')
     tag='dev-'+version+'-'+sha[:8] if env=='dev' else version;target=PUSH+':'+tag
-    command(['docker','build','--build-arg','BUILD_REVISION='+sha,'--label','org.opencontainers.image.revision='+sha,'--label','org.opencontainers.image.version='+version,'-t',target,'app'])
     vault=Vault('wallettracker-ci-'+env);robot=vault.read('wallettracker/data/delivery/harbor-ci');mirror=vault.read('wallettracker/data/delivery/github-mirror');status=vault.read('wallettracker/data/delivery/argocd-'+env)['TOKEN']
     with tempfile.TemporaryDirectory(prefix='wallettracker-delivery-') as tmp:
         tmp=pathlib.Path(tmp);tmp.chmod(0o700);child=dict(os.environ,DOCKER_CONFIG=str(tmp/'docker'))
         command(['docker','login','registry.downops.win','--username',robot['HARBOR_ROBOT_NAME'],'--password-stdin'],child,robot['HARBOR_ROBOT_SECRET'].encode())
-        command(['docker','push',target],child)
+        exists=subprocess.run(['docker','manifest','inspect',target],env=child,capture_output=True).returncode==0
+        if exists:
+            command(['docker','pull',target],child)
+            actual=json.loads(command(['docker','image','inspect',target],child))[0]['Config']['Labels'].get('org.opencontainers.image.revision')
+            if actual!=sha:raise RuntimeError('Immutable release tag belongs to another source revision')
+        else:
+            command(['docker','build','--build-arg','BUILD_REVISION='+sha,'--label','org.opencontainers.image.revision='+sha,'--label','org.opencontainers.image.version='+version,'-t',target,'app'],child)
+            command(['docker','push',target],child)
         ask=tmp/'askpass';ask.write_text('#!/usr/bin/env python3\nimport os,sys\nprint("gitlab-ci-token" if "username" in sys.argv[1].lower() else os.environ["CI_JOB_TOKEN"])\n');ask.chmod(0o700);child.update(GIT_ASKPASS=str(ask),GIT_TERMINAL_PROMPT='0')
         remote=os.environ['CI_SERVER_URL'].rstrip('/')+'/'+os.environ['CI_PROJECT_PATH']+'.git'
         command(['git','-c','credential.helper=','fetch',remote,branch],child);head=command(['git','rev-parse','FETCH_HEAD'])
+        file=pathlib.Path('k8s')/env/'kustomization.yaml'
         if head!=sha:
-            print('Source superseded; immutable image retained, no stale GitOps writeback performed');return
-        command(['git','checkout','-B','gitops-writeback','FETCH_HEAD']);file=pathlib.Path('k8s')/env/'kustomization.yaml';data=json.loads(file.read_text());data['images']=[{'name':IMAGE,'newTag':tag}];file.write_text(json.dumps(data,indent=2)+'\n')
-        command(['git','config','user.name','WalletTracker GitOps CI']);command(['git','config','user.email','wallettracker-ci@downops.invalid']);command(['git','add',str(file)])
-        command(['git','commit','-m','[gitops '+env+'] '+tag+' [skip ci]']);revision=command(['git','rev-parse','HEAD']);command(['git','-c','credential.helper=','push','-o','ci.skip',remote,'HEAD:'+branch],child)
+            changed=set(command(['git','diff','--name-only',sha,head]).splitlines());current=json.loads(command(['git','show',head+':'+str(file)]))
+            if changed-{str(file)} or current.get('images')!=[{'name':IMAGE,'newTag':tag}]:
+                print('Source superseded; immutable image retained, no stale GitOps writeback performed');return
+        command(['git','checkout','-B','gitops-writeback','FETCH_HEAD']);data=json.loads(file.read_text());revision=head
+        if data.get('images')!=[{'name':IMAGE,'newTag':tag}]:
+            data['images']=[{'name':IMAGE,'newTag':tag}];file.write_text(json.dumps(data,indent=2)+'\n')
+            command(['git','config','user.name','WalletTracker GitOps CI']);command(['git','config','user.email','wallettracker-ci@downops.invalid']);command(['git','add',str(file)])
+            command(['git','commit','-m','[gitops '+env+'] '+tag+' [skip ci]']);revision=command(['git','rev-parse','HEAD']);command(['git','-c','credential.helper=','push','-o','ci.skip',remote,'HEAD:'+branch],child)
         # Refresh always follows authoritative writeback, even if mirror push fails.
         request('https://argocd.int.downops.win/api/webhook','POST',{'object_kind':'push','ref':'refs/heads/'+branch,'project':{'web_url':'https://10.2.0.11/downops/wallet-tracker-backend'},'repository':{'url':'ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git'}},{'X-Gitlab-Event':'Push Hook'})
         key=tmp/'github-key';known=tmp/'known_hosts';key.write_text(mirror['SSH_PRIVATE_KEY']);key.chmod(0o600);known.write_text(mirror['KNOWN_HOSTS']);known.chmod(0o600)

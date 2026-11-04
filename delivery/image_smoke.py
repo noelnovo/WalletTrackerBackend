@@ -4,13 +4,16 @@ if os.environ.get('CI')!='true':raise SystemExit('CI-only image probe')
 if os.environ.get('DOCKER_HOST')!='tcp://docker:2375':raise SystemExit('Refusing non-disposable CI Docker endpoint')
 def run(args):
     p=subprocess.run(['docker',*args],capture_output=True)
-    if p.returncode:raise RuntimeError('Synthetic container operation failed; diagnostics withheld')
+    if p.returncode:
+        text=(p.stdout+p.stderr).decode(errors='replace');hints=[s for s in ['OperationalError','ImportError','ModuleNotFoundError','Connection refused','Access denied','Permission denied','libmariadb','libstdc++'] if s in text]
+        print(json.dumps({'synthetic_operation_failed':args[0],'fixed_error_hints':hints}))
+        raise RuntimeError('Synthetic container operation failed; diagnostics withheld')
     return p.stdout
 try:
     run(['network','create','wallettracker-ci'])
     run(['run','-d','--name','wallettracker-ci-db','--network','wallettracker-ci','--network-alias','db','-e','MARIADB_ROOT_PASSWORD=ci-only-not-production','mariadb:11.4.12'])
     for _ in range(60):
-        p=subprocess.run(['docker','exec','wallettracker-ci-db','mariadb-admin','ping','--silent'],capture_output=True)
+        p=subprocess.run(['docker','exec','-e','MYSQL_PWD=ci-only-not-production','wallettracker-ci-db','mariadb','--protocol=tcp','-h','127.0.0.1','-u','root','--batch','-e','SELECT 1'],capture_output=True)
         if p.returncode==0:break
         time.sleep(2)
     else:raise RuntimeError('Synthetic database startup failed')
