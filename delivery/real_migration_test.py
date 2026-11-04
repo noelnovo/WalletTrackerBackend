@@ -13,10 +13,21 @@ for _ in range(60):
     except Exception:time.sleep(2)
 else:raise SystemExit('Synthetic MariaDB service did not become ready')
 main();engine=get_engine(name)
-with engine.begin() as c:c.execute(text('CREATE DATABASE IF NOT EXISTS `'+name+'_u1`'))
+with engine.begin() as c:c.execute(text('CREATE DATABASE IF NOT EXISTS `'+name+'_u9999`'))
 engine.dispose();main();main()
-for db,tables in [(name,{'User','RefreshToken','alembic_version'}),(name+'_u1',{'Expense','ExpenseCategory','Importe','Season','alembic_version'})]:
+for db,tables in [(name,{'User','RefreshToken','alembic_version'}),(name+'_u9999',{'Expense','ExpenseCategory','Importe','Season','alembic_version'})]:
     e=get_engine(db);assert set(inspect(e).get_table_names())==tables;e.dispose()
+# A real API registration must create a versioned tenant that survives the next
+# full deployment migration. No mocks, copied production data or stamp-head fix.
+from app import create_app
+app=create_app()
+with app.test_client() as client:
+    response=client.post('/api/v1/register/',json={'username':'ci-registration-upgrade','password':'ci-only-registration-password'})
+    assert response.status_code==200 and response.get_json()['success']
+    user_id=response.get_json()['data']['id']
+e=get_engine(name+'_u'+str(user_id))
+with e.connect() as c:assert c.execute(text('SELECT version_num FROM alembic_version')).scalar()=='c34bd55b3ea7'
+e.dispose();main();main()
 # Rehearse the source-account adoption SQL on this disposable CI service only.
 # No live source password, data or account is read or changed.
 engine=get_engine(None)
