@@ -13,16 +13,15 @@ RUN python -m pip uninstall --yes pip \
     && adduser -u 10001 -S -G appgroup appuser
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
-COPY --chown=10001:10001 *.py ./
-COPY --chown=10001:10001 endpoints/ ./endpoints/
-COPY --chown=10001:10001 exceptions/ ./exceptions/
-COPY --chown=10001:10001 migrations_main/ ./migrations_main/
-COPY --chown=10001:10001 migrations_tenant/ ./migrations_tenant/
-COPY --chown=10001:10001 models/ ./models/
-COPY --chown=10001:10001 repositories/ ./repositories/
-COPY --chown=10001:10001 utils/ ./utils/
-COPY --chown=10001:10001 validators/ ./validators/
-RUN chown 10001:10001 /app
+COPY *.py ./
+COPY endpoints/ ./endpoints/
+COPY exceptions/ ./exceptions/
+COPY migrations_main/ ./migrations_main/
+COPY migrations_tenant/ ./migrations_tenant/
+COPY models/ ./models/
+COPY repositories/ ./repositories/
+COPY utils/ ./utils/
+COPY validators/ ./validators/
 USER 10001:10001
 EXPOSE 5000
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_BUILD_REVISION=${BUILD_REVISION} WALLET_TRACKER_REQUIRE_MANAGED_KEYS=true WALLET_TRACKER_STDOUT_LOG=true

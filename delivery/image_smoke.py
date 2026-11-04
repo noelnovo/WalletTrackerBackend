@@ -20,8 +20,12 @@ try:
         if p.returncode==0:break
         time.sleep(2)
     else:raise RuntimeError('Synthetic database startup failed')
-    env=['DATABASE_ROOT_PASSWORD=ci-only-not-production','DATABASE_NAME=wallettracker_ci','WALLET_TRACKER_DB_HOST=db','WALLET_TRACKER_DB_USER=root','WALLET_TRACKER_SECRET=ci-only-signing-value','WALLET_TRACKER_STDOUT_LOG=true','WALLET_TRACKER_REQUIRE_MANAGED_KEYS=false']
-    flags=[x for value in env for x in ['-e',value]]
+    run(['volume','create','wallettracker-ci-keys'])
+    generate="from cryptography.hazmat.primitives.asymmetric import rsa; from cryptography.hazmat.primitives import serialization as s; from pathlib import Path; k=rsa.generate_private_key(public_exponent=65537,key_size=2048); Path('/identity/private.pem').write_bytes(k.private_bytes(s.Encoding.PEM,s.PrivateFormat.PKCS8,s.NoEncryption())); Path('/identity/public.pem').write_bytes(k.public_key().public_bytes(s.Encoding.PEM,s.PublicFormat.SubjectPublicKeyInfo)); Path('/identity/private.pem').chmod(0o444)"
+    run(['run','--rm','--user','0:0','--mount','type=volume,source=wallettracker-ci-keys,target=/identity','--entrypoint','/app/.venv/bin/python','wallettracker-ci','-c',generate])
+    run(['run','--rm','--entrypoint','/usr/local/bin/python','wallettracker-ci','-c','import importlib.util; assert importlib.util.find_spec("pip") is None'])
+    env=['DATABASE_ROOT_PASSWORD=ci-only-not-production','DATABASE_NAME=wallettracker_ci','WALLET_TRACKER_DB_HOST=db','WALLET_TRACKER_DB_USER=root','WALLET_TRACKER_SECRET=ci-only-signing-value','WALLET_TRACKER_STDOUT_LOG=true','WALLET_TRACKER_REQUIRE_MANAGED_KEYS=true','WALLET_TRACKER_PRIVATE_KEY_FILE=/run/identity/private.pem','WALLET_TRACKER_PUBLIC_KEY_FILE=/run/identity/public.pem']
+    flags=[x for value in env for x in ['-e',value]]+['--mount','type=volume,source=wallettracker-ci-keys,target=/run/identity,readonly','--read-only','--tmpfs','/tmp:rw,noexec,nosuid,size=32m']
     run(['run','--rm','--network','wallettracker-ci',*flags,'--entrypoint','/app/.venv/bin/python','wallettracker-ci','migrate_all.py'])
     run(['run','-d','--name','wallettracker-ci-api','--network','wallettracker-ci',*flags,'wallettracker-ci'])
     code="import urllib.request,json; r=urllib.request.urlopen('http://wallettracker-ci-api:5000/api/v1/ready'); assert json.load(r)['success']"
@@ -34,3 +38,4 @@ try:
 finally:
     for name in ['wallettracker-ci-api','wallettracker-ci-db','wallettracker-ci-fail-closed']:subprocess.run(['docker','rm','-f','-v',name],capture_output=True)
     subprocess.run(['docker','network','rm','wallettracker-ci'],capture_output=True)
+    subprocess.run(['docker','volume','rm','wallettracker-ci-keys'],capture_output=True)
