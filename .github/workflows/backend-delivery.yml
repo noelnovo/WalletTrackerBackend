@@ -1,0 +1,9 @@
+name: Backend delivery ownership
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  ownership:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Backend CI is owned by GitLab CI. GitHub is the mirror. No Jenkins call or deployment occurs here.'

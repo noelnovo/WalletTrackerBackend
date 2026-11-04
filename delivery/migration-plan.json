@@ -1,0 +1,43 @@
+{
+  "binding_request": "can you migrate wallettracker whole process to kubernetes argocd vso etc.? and then remove jenkins completely and leftovers?",
+  "state": "owner-authorized execution; production deletion remains gated on verified migration",
+  "vault_recovery_allowed": true,
+  "authorization_update": "Owner explicitly authorized temporary recovery after asking the agent to handle secrets; supersedes earlier no-recovery choice. Preserve existing noel id1 record/verifier/tenant data and keys.",
+  "ci": "GitLab CI explicitly approved; supersedes former backend GitHub-only CI exception",
+  "mobile": {"repository": "noelnovo/WalletTracker", "github_only": true, "apk_build_or_release_in_scope": false},
+  "source_repository": "downops/wallet-tracker-backend",
+  "gitlab_project_id": 1,
+  "gitops_repository_url": "ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git",
+  "environments": {"dev": {"branch": "dev", "namespace": "wallettracker-dev", "auto_sync": true}, "prod": {"branch": "main", "namespace": "wallettracker-prod", "auto_sync": false, "initial_api_replicas": 0}},
+  "database": {
+    "engine": "MariaDB", "version": "11.4.12", "production_schema": "wallet_tracker", "tenant_prefix": "wallet_tracker_u",
+    "preserve_all_databases_accounts_grants_and_user_crypto": true,
+    "source_api_root_host_grant": "10.2.0.201", "target_pod_host_grant": "10.42.0.%",
+    "grant_migration": "Copy the existing root account's authentication/privilege JSON to the exact observed node pod CIDR, without changing its password or existing accounts. NetworkPolicy restricts database clients. This preserves existing application database-admin privilege; it is not a least-privilege tenant-provisioning redesign.",
+    "no_database_engine_or_schema_baseline_upgrade": true
+  },
+  "production_canonical_vault_paths": ["downops/apps/wallettracker/runtime", "downops/apps/wallettracker/signing", "downops/apps/wallettracker/rsa"],
+  "new_vault_mount": "wallettracker",
+  "new_vault_paths": ["dev/database", "dev/signing", "dev/rsa", "delivery/harbor-ci", "delivery/harbor-pull", "delivery/gitops-read", "delivery/github-mirror", "delivery/argocd-dev", "delivery/argocd-prod"],
+  "required_operator_actions": [
+    "Provision the scoped Vault contract. Owner-authorized temporary recovery may be used only by the protected orchestration, with mandatory revocation and exact gate restoration; bootstrap_vault.py itself never acquires administrative access.",
+    "Create a dedicated Harbor project wallettracker and separate project push/pull robots; store them once at wallettracker/delivery/harbor-ci and delivery/harbor-pull. Preserve the old downops-project CI robot until Jenkins retirement; do not broaden it to the new project.",
+    "Create a read-only deploy key for the existing GitLab repository; store its private key at wallettracker/delivery/gitops-read. Preserve strict existing Argo SSH host trust.",
+    "Provide a repository-scoped GitHub mirror deploy key at wallettracker/delivery/github-mirror and independently verified GitHub SSH known-hosts data. Do not copy the estate-admin GitHub management token into CI.",
+    "Approve/review creation of isolated dev branches/environment and enable same-project CI_JOB_TOKEN repository push. No persistent GitOps-write credential is needed.",
+    "Bootstrap namespace security and the separate dev/prod/credentials Argo AppProjects, then generate only their application-get ci-status role tokens into delivery/argocd-dev and delivery/argocd-prod. CI receives no sync, Secret read or cluster credential. Protect main and v* release tags; approve manual production jobs/sync.",
+    "Confirm cluster capacity (at least 768MiB reserve under measured rehearsal load); validate storage/backup retention and perform a protected full restore rehearsal in a deny-by-default, unexposed namespace.",
+    "Set each bound database/backup PV reclaim policy to Retain before importing data. PVC sizes are requests, not filesystem quotas. The cluster is single-node local storage: local backups alone are not off-host disaster recovery.",
+    "Bootstrap prod by selecting only Namespace/auth/VSS/database resources in manual Argo sync. Import the full SQL/system-account dump plus adopt-pod-grant.sql in one protected client session; compare data and keys, then issue approve-restore-checkpoint.sql manually. Only then run the release migration hook and review raising prod API replicas from zero.",
+    "For activation, update delivery/environment-state.json only through the reviewed release (production_restore_verified and production_api_enabled), regenerate declarations and preserve that reviewed state in subsequent promotions. CI never changes this file. Backup enablement is also an explicit reviewed flag.",
+    "Enable the initially suspended backup CronJob only after cutover and verify a restorable dump and protected off-host export. Preserve the existing recovery archives until that evidence exists.",
+    "Before production, approve the release and API write-freeze window; capture fresh full SQL/users/grants plus key-byte and row/count proofs. Keep production API replicas zero until restore and migrations pass.",
+    "Update only api.downops.win tunnel origin/DNS and any required internal dev route after readiness. Keep the old tunnel forwarding to the new primary during DNS drain; never resume the old Flask writer against a stale database.",
+    "Verify new GitLab CI, immutable image, Argo revision/readiness, VSO filtering, mobile-compatible signing/key identity, protected API and data/account equality before Jenkins retirement.",
+    "Archive Jenkins state, Terraform state and native recovery payloads protected/off-Git; disable/drain its jobs and remove only verified Jenkins-specific routes, tunnel, SSO client, SSH keys and Vault identities/grants. Do not remove shared Proxmox/Cloudflare/Harbor credentials.",
+    "Explicitly confirm the exact old guest/data deletion list (100,101,102 if all exclusively retired) after successful cutover; do not execute terraform destroy or restore an old snapshot after new writes. Retain required recovery archives."
+  ],
+  "jenkins_inventory": {"wallettracker_cd_last_observed_build": 306, "last_result": "SUCCESS", "other_job": "projecte desplegament", "other_job_observed_build_history": "none; archive before approved Jenkins removal"},
+  "rollback": "Before new-primary writes: restore the old route/writer only after confirming database equality. After new writes: freeze writes and transfer the current complete database back before restoring the old writer. Never roll back by restoring a stale snapshot.",
+  "prohibited": ["unscoped or unrevoked administrative recovery", "Jenkins removal before replacement proof", "production signing/password rotation", "production data in public dev", "APK publication", "CI-held kubeconfig or imperative CI deployment", "mutable deployment tags", "dropping shared credentials or existing backups"]
+}

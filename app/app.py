@@ -12,6 +12,7 @@ from db import db
 from config import DATABASE_USERNAME, DATABASE_PASSWORD, DATABASE_HOST, DATABASE_NAME, ENABLE_REGISTER, MAIN_TABLES
 from utils.Cryptography import generate_keys_file
 from utils.Logger import AppLogger
+from runtime_identity import managed_mode, load_managed_identity
 
 def _include_object(object, name, type_, reflected, compare_to):
     if type_ == "table":
@@ -38,15 +39,20 @@ def create_app(database_uri=None):
 
     app = Flask(__name__)
     log_path = os.path.join(os.path.dirname(__file__), "logs", "app.log")
-    AppLogger.configure(log_path)
+    AppLogger.configure(None if os.environ.get('WALLET_TRACKER_STDOUT_LOG', 'false').lower() == 'true' else log_path)
 
-    if not (os.path.exists("private_key.pem") and os.path.exists("public_key.pem")):
-        generate_keys_file()
+    if managed_mode():
+        private_key, public_key = load_managed_identity()
+    else:
+        if not (os.path.exists("private_key.pem") and os.path.exists("public_key.pem")):
+            generate_keys_file()
+        with open('private_key.pem', 'r') as private_file, open('public_key.pem', 'r') as public_file:
+            private_key, public_key = private_file.read(), public_file.read()
     
     enable_register = ENABLE_REGISTER.lower() == "true"
     app.config['ENABLE_REGISTER'] = enable_register
-    app.config['PRIVATE_KEY'] = open('private_key.pem', 'r').read()
-    app.config['PUBLIC_KEY'] = open('public_key.pem', 'r').read()
+    app.config['PRIVATE_KEY'] = private_key
+    app.config['PUBLIC_KEY'] = public_key
     connection_string = database_uri if database_uri is not None else URL.create(
         "mysql", username=DATABASE_USERNAME, password=DATABASE_PASSWORD,
         host=DATABASE_HOST, database=DATABASE_NAME,
@@ -63,5 +69,10 @@ def create_app(database_uri=None):
     app.register_blueprint(health_bp)
     app.register_blueprint(season_bp)
     app.register_blueprint(importe_bp)
+
+    @app.after_request
+    def build_revision(response):
+        response.headers['X-WalletTracker-Revision'] = os.environ.get('APP_BUILD_REVISION', 'unknown')
+        return response
 
     return app

@@ -1,0 +1,130 @@
+stages: [test, image, security, publish]
+
+workflow:
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /\[gitops /'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - when: always
+
+default:
+  interruptible: true
+
+variables:
+  GIT_DEPTH: "0"
+  VAULT_READY: "false"
+  DATABASE_ROOT_PASSWORD: "ci-only-not-production"
+  DATABASE_NAME: "wallettracker_ci"
+  WALLET_TRACKER_SECRET: "ci-only-signing-value"
+  WALLET_TRACKER_DB_USER: "root"
+  WALLET_TRACKER_DB_HOST: "db"
+  ENABLE_REGISTER: "true"
+  WALLET_TRACKER_STDOUT_LOG: "true"
+
+delivery-tests:
+  stage: test
+  image: python:3.13-alpine
+  script:
+    - python3 delivery/render_manifests.py --check
+    - python3 -m unittest discover -s delivery -p 'test_*.py' -v
+    - python3 delivery/bootstrap_vault.py
+
+application-tests:
+  stage: test
+  image: python:3.12-alpine
+  services:
+    - name: mariadb:11.4.12
+      alias: db
+  variables:
+    MARIADB_ROOT_PASSWORD: "ci-only-not-production"
+  before_script:
+    - apk add --no-cache mariadb-dev gcc musl-dev linux-headers
+    - pip install --no-cache-dir uv
+    - cd app && uv sync --frozen && uv lock --check && cd ..
+  script:
+    - PYTHONPATH="$CI_PROJECT_DIR/app" app/.venv/bin/python delivery/real_migration_test.py
+    - PYTHONPATH="$CI_PROJECT_DIR/app" app/.venv/bin/pytest tests --cov=app --cov-report=xml:coverage.xml -q
+    - app/.venv/bin/python -c "import xml.etree.ElementTree as E; p='coverage.xml'; t=E.parse(p); [setattr(x,'text','app') for x in t.findall('./sources/source')]; t.write(p)"
+  artifacts:
+    paths: [coverage.xml]
+    expire_in: 1 day
+
+.docker:
+  image: docker:27-cli
+  services:
+    - name: docker:27-dind
+      alias: docker
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - apk add --no-cache python3 jq
+
+image-smoke:
+  extends: .docker
+  stage: image
+  needs: [application-tests, delivery-tests]
+  resource_group: wallettracker-build
+  script:
+    - docker build --build-arg BUILD_REVISION="$CI_COMMIT_SHA" -t wallettracker-ci app
+    - python3 delivery/image_smoke.py
+
+security-gates:
+  extends: .docker
+  stage: security
+  resource_group: wallettracker-security
+  needs: [application-tests, image-smoke]
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.int.downops.win
+  rules:
+    - if: '$VAULT_READY == "true" && ($CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_TAG)'
+  script:
+    - docker build -t wallettracker-ci app
+    - docker save wallettracker-ci -o wallettracker-ci.tar
+    - docker run --rm -v "$CI_PROJECT_DIR:/workspace:ro" anchore/syft docker-archive:/workspace/wallettracker-ci.tar -o cyclonedx-json | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json" | .components |= map(select(.type == "library"))' > bom.json
+    - python3 delivery/security_scan.py
+
+operator-vault-gate:
+  stage: publish
+  image: python:3.13-alpine
+  rules:
+    - if: '$VAULT_READY != "true" && ($CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_TAG)'
+  script:
+    - echo 'Operator Vault bootstrap is not complete. No recovery, production deployment or Jenkins removal is allowed.'
+    - exit 1
+
+publish-dev:
+  extends: .docker
+  stage: publish
+  resource_group: wallettracker-dev
+  needs: [security-gates]
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.int.downops.win
+  rules:
+    - if: '$VAULT_READY == "true" && $CI_COMMIT_BRANCH == "dev"'
+  environment: development
+  script:
+    - apk add --no-cache git openssh-client
+    - python3 delivery/publish.py dev
+
+publish-prod:
+  extends: .docker
+  stage: publish
+  interruptible: false
+  resource_group: wallettracker-prod
+  needs: [security-gates]
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.int.downops.win
+  rules:
+    - if: '$VAULT_READY == "true" && $CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+  environment: production
+  script:
+    - apk add --no-cache git openssh-client
+    - python3 delivery/publish.py prod
