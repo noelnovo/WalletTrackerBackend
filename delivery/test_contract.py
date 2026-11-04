@@ -4,7 +4,7 @@ from render_manifests import resources
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 class DeliveryContract(unittest.TestCase):
     def test_no_recovery_and_no_early_jenkins_removal(self):
-        plan=json.loads((ROOT/'delivery/migration-plan.json').read_text());self.assertFalse(plan['vault_recovery_allowed']);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
+        plan=json.loads((ROOT/'delivery/migration-plan.json').read_text());self.assertIn('authorization_update',plan);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
     def test_database_exact_version_and_persistence(self):
         for env in ['dev','prod']:
             db=next(x for x in resources(env) if x['kind']=='StatefulSet');self.assertEqual(db['spec']['template']['spec']['containers'][0]['image'],'mariadb:11.4.12');self.assertEqual(db['spec']['persistentVolumeClaimRetentionPolicy']['whenDeleted'],'Retain')

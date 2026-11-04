@@ -51,7 +51,13 @@ def main(env):
         command(['git','push','git@github.com:noelnovo/WalletTrackerBackend.git','HEAD:'+branch],child)
         expected=IMAGE+':'+tag;app='wallettracker-'+env
         for _ in range(120):
-            result=request('https://argocd.int.downops.win/api/v1/applications/'+app,headers={'Authorization':'Bearer '+status});state=result.get('status',{})
+            try:result=request('https://argocd.int.downops.win/api/v1/applications/'+app,headers={'Authorization':'Bearer '+status})
+            except RuntimeError as error:
+                # First bootstrap registers the app after the first immutable
+                # manifest exists. Do not mask unauthorized/forbidden access.
+                if not any(x in str(error) for x in ['HTTP 404','HTTP 502','HTTP 503']):raise
+                time.sleep(5);continue
+            state=result.get('status',{})
             if state.get('sync',{}).get('revision')==revision and state.get('sync',{}).get('status')=='Synced' and state.get('health',{}).get('status')=='Healthy' and expected in state.get('summary',{}).get('images',[]):
                 host='api.downops.win' if env=='prod' else 'wallettracker-dev.int.downops.win'
                 try:
