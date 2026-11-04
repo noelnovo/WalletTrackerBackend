@@ -6,5 +6,11 @@ __pycache__
 logs/
 *.pem
 .env
+.env.*
+*.key
+*.p12
+*.jks
+coverage.xml
+.coverage
 debugging/
 migrations_main/README
