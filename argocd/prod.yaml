@@ -1,0 +1,25 @@
+{
+  "apiVersion": "argoproj.io/v1alpha1",
+  "kind": "Application",
+  "metadata": {
+    "name": "wallettracker-prod",
+    "namespace": "argocd"
+  },
+  "spec": {
+    "project": "wallettracker-prod",
+    "source": {
+      "repoURL": "ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git",
+      "targetRevision": "main",
+      "path": "k8s/prod"
+    },
+    "destination": {
+      "server": "https://kubernetes.default.svc",
+      "namespace": "wallettracker-prod"
+    },
+    "syncPolicy": {
+      "syncOptions": [
+        "FailOnSharedResource=true"
+      ]
+    }
+  }
+}

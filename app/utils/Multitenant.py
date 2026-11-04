@@ -1,9 +1,11 @@
 import secrets
 import threading
+from pathlib import Path
+from flask_migrate import upgrade as migrate_upgrade
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import scoped_session, sessionmaker
 from db import db
-from config import DATABASE_HOST, DATABASE_NAME, MAIN_TABLES
+from config import DATABASE_HOST, DATABASE_NAME
 from exceptions.Http import HttpException
 from utils.Constants import MultitenantMessages
 _engine_cache = {}
@@ -47,12 +49,23 @@ def create_tenant_user_and_db(user) -> tuple[str, str]:
         user.db_username = db_username
         user.db_password = db_password
         user.save()
+        migrate_new_tenant(user)
         initialise_tenant_db(user)
 
         return db_username, db_password
     except Exception as e:
         raise HttpException(MultitenantMessages.INIT_TENANT_FAILED, 500, e)
     
+
+
+def migrate_new_tenant(user):
+    # Registration creates an empty tenant database. Apply its real versioned
+    # schema, never create_all/stamp an assumed baseline or alter existing data.
+    from app import create_app
+    uri = construct_db_connection_string(user.db_username, user.db_password, user.id)
+    tenant_app = create_app(database_uri=uri)
+    with tenant_app.app_context():
+        migrate_upgrade(directory=str(Path(__file__).resolve().parents[1] / 'migrations_tenant'))
 
 
 def initialise_tenant_db(user):
@@ -64,12 +77,6 @@ def initialise_tenant_db(user):
             uri = construct_db_connection_string(user.db_username, user.db_password, user.id)
             eng = create_engine(uri, pool_pre_ping=True, pool_recycle=3600)
             _engine_cache[user.id] = eng
-
-            tenant_tables = [
-                t for name, t in db.metadata.tables.items()
-                if name not in MAIN_TABLES
-            ]
-            db.metadata.create_all(bind=eng, tables=tenant_tables)
 
             return eng
     except Exception as e:

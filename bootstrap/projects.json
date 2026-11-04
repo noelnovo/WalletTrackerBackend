@@ -1,0 +1,270 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "argoproj.io/v1alpha1",
+      "kind": "AppProject",
+      "metadata": {
+        "name": "wallettracker-dev",
+        "namespace": "argocd"
+      },
+      "spec": {
+        "sourceRepos": [
+          "ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git"
+        ],
+        "destinations": [
+          {
+            "server": "https://kubernetes.default.svc",
+            "namespace": "wallettracker-dev"
+          }
+        ],
+        "clusterResourceWhitelist": [],
+        "clusterResourceBlacklist": [
+          {
+            "group": "*",
+            "kind": "*"
+          }
+        ],
+        "namespaceResourceWhitelist": [
+          {
+            "group": "",
+            "kind": "Service"
+          },
+          {
+            "group": "",
+            "kind": "ConfigMap"
+          },
+          {
+            "group": "",
+            "kind": "ServiceAccount"
+          },
+          {
+            "group": "",
+            "kind": "PersistentVolumeClaim"
+          },
+          {
+            "group": "apps",
+            "kind": "Deployment"
+          },
+          {
+            "group": "apps",
+            "kind": "StatefulSet"
+          },
+          {
+            "group": "batch",
+            "kind": "Job"
+          },
+          {
+            "group": "batch",
+            "kind": "CronJob"
+          },
+          {
+            "group": "networking.k8s.io",
+            "kind": "NetworkPolicy"
+          },
+          {
+            "group": "rbac.authorization.k8s.io",
+            "kind": "Role"
+          },
+          {
+            "group": "rbac.authorization.k8s.io",
+            "kind": "RoleBinding"
+          },
+          {
+            "group": "secrets.hashicorp.com",
+            "kind": "VaultAuth"
+          },
+          {
+            "group": "secrets.hashicorp.com",
+            "kind": "VaultStaticSecret"
+          }
+        ],
+        "roles": [
+          {
+            "name": "ci-status",
+            "policies": [
+              "p, proj:wallettracker-dev:ci-status, applications, get, wallettracker-dev/wallettracker-dev, allow"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "argoproj.io/v1alpha1",
+      "kind": "AppProject",
+      "metadata": {
+        "name": "wallettracker-prod",
+        "namespace": "argocd"
+      },
+      "spec": {
+        "sourceRepos": [
+          "ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git"
+        ],
+        "destinations": [
+          {
+            "server": "https://kubernetes.default.svc",
+            "namespace": "wallettracker-prod"
+          }
+        ],
+        "clusterResourceWhitelist": [],
+        "clusterResourceBlacklist": [
+          {
+            "group": "*",
+            "kind": "*"
+          }
+        ],
+        "namespaceResourceWhitelist": [
+          {
+            "group": "",
+            "kind": "Service"
+          },
+          {
+            "group": "",
+            "kind": "ConfigMap"
+          },
+          {
+            "group": "",
+            "kind": "ServiceAccount"
+          },
+          {
+            "group": "",
+            "kind": "PersistentVolumeClaim"
+          },
+          {
+            "group": "apps",
+            "kind": "Deployment"
+          },
+          {
+            "group": "apps",
+            "kind": "StatefulSet"
+          },
+          {
+            "group": "batch",
+            "kind": "Job"
+          },
+          {
+            "group": "batch",
+            "kind": "CronJob"
+          },
+          {
+            "group": "networking.k8s.io",
+            "kind": "NetworkPolicy"
+          },
+          {
+            "group": "rbac.authorization.k8s.io",
+            "kind": "Role"
+          },
+          {
+            "group": "rbac.authorization.k8s.io",
+            "kind": "RoleBinding"
+          },
+          {
+            "group": "secrets.hashicorp.com",
+            "kind": "VaultAuth"
+          },
+          {
+            "group": "secrets.hashicorp.com",
+            "kind": "VaultStaticSecret"
+          }
+        ],
+        "roles": [
+          {
+            "name": "ci-status",
+            "policies": [
+              "p, proj:wallettracker-prod:ci-status, applications, get, wallettracker-prod/wallettracker-prod, allow"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "argoproj.io/v1alpha1",
+      "kind": "AppProject",
+      "metadata": {
+        "name": "wallettracker-credentials",
+        "namespace": "argocd"
+      },
+      "spec": {
+        "sourceRepos": [
+          "ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git"
+        ],
+        "destinations": [
+          {
+            "server": "https://kubernetes.default.svc",
+            "namespace": "argocd"
+          }
+        ],
+        "clusterResourceWhitelist": [],
+        "clusterResourceBlacklist": [
+          {
+            "group": "*",
+            "kind": "*"
+          }
+        ],
+        "namespaceResourceWhitelist": [
+          {
+            "group": "",
+            "kind": "Service"
+          },
+          {
+            "group": "",
+            "kind": "ConfigMap"
+          },
+          {
+            "group": "",
+            "kind": "ServiceAccount"
+          },
+          {
+            "group": "",
+            "kind": "PersistentVolumeClaim"
+          },
+          {
+            "group": "apps",
+            "kind": "Deployment"
+          },
+          {
+            "group": "apps",
+            "kind": "StatefulSet"
+          },
+          {
+            "group": "batch",
+            "kind": "Job"
+          },
+          {
+            "group": "batch",
+            "kind": "CronJob"
+          },
+          {
+            "group": "networking.k8s.io",
+            "kind": "NetworkPolicy"
+          },
+          {
+            "group": "rbac.authorization.k8s.io",
+            "kind": "Role"
+          },
+          {
+            "group": "rbac.authorization.k8s.io",
+            "kind": "RoleBinding"
+          },
+          {
+            "group": "secrets.hashicorp.com",
+            "kind": "VaultAuth"
+          },
+          {
+            "group": "secrets.hashicorp.com",
+            "kind": "VaultStaticSecret"
+          }
+        ],
+        "roles": [
+          {
+            "name": "ci-status",
+            "policies": [
+              "p, proj:wallettracker-credentials:ci-status, applications, get, wallettracker-credentials/wallettracker-credentials, allow"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

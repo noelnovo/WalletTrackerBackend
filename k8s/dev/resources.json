@@ -1,0 +1,1071 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "wallettracker",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "identity",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "secrets.hashicorp.com/v1beta1",
+      "kind": "VaultAuth",
+      "metadata": {
+        "name": "identity",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "vaultConnectionRef": "vault-secrets-operator/default",
+        "method": "jwt",
+        "mount": "jwt",
+        "jwt": {
+          "role": "wallettracker-dev-identity",
+          "serviceAccount": "identity",
+          "audiences": [
+            "vault-vso"
+          ],
+          "tokenExpirationSeconds": 600
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "database",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "secrets.hashicorp.com/v1beta1",
+      "kind": "VaultAuth",
+      "metadata": {
+        "name": "database",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "vaultConnectionRef": "vault-secrets-operator/default",
+        "method": "jwt",
+        "mount": "jwt",
+        "jwt": {
+          "role": "wallettracker-dev-database",
+          "serviceAccount": "database",
+          "audiences": [
+            "vault-vso"
+          ],
+          "tokenExpirationSeconds": 600
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "pull",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "secrets.hashicorp.com/v1beta1",
+      "kind": "VaultAuth",
+      "metadata": {
+        "name": "pull",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "vaultConnectionRef": "vault-secrets-operator/default",
+        "method": "jwt",
+        "mount": "jwt",
+        "jwt": {
+          "role": "wallettracker-dev-pull",
+          "serviceAccount": "pull",
+          "audiences": [
+            "vault-vso"
+          ],
+          "tokenExpirationSeconds": 600
+        }
+      }
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "Role",
+      "metadata": {
+        "name": "vso-token-request",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "rules": [
+        {
+          "apiGroups": [
+            ""
+          ],
+          "resources": [
+            "serviceaccounts/token"
+          ],
+          "resourceNames": [
+            "identity",
+            "database",
+            "pull"
+          ],
+          "verbs": [
+            "create"
+          ]
+        }
+      ]
+    },
+    {
+      "apiVersion": "rbac.authorization.k8s.io/v1",
+      "kind": "RoleBinding",
+      "metadata": {
+        "name": "vso-token-request",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "roleRef": {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": "vso-token-request"
+      },
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "vault-secrets-operator-controller-manager",
+          "namespace": "vault-secrets-operator"
+        }
+      ]
+    },
+    {
+      "apiVersion": "secrets.hashicorp.com/v1beta1",
+      "kind": "VaultStaticSecret",
+      "metadata": {
+        "name": "wallettracker-db",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "vaultAuthRef": "database",
+        "mount": "wallettracker",
+        "path": "dev/database",
+        "type": "kv-v2",
+        "refreshAfter": "60s",
+        "hmacSecretData": true,
+        "destination": {
+          "name": "wallettracker-db",
+          "create": true,
+          "type": "Opaque",
+          "transformation": {
+            "excludeRaw": true,
+            "excludes": [
+              ".*"
+            ],
+            "templates": {
+              "MARIADB_ROOT_PASSWORD": {
+                "text": "{{ .Secrets.DATABASE_ROOT_PASSWORD }}"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "secrets.hashicorp.com/v1beta1",
+      "kind": "VaultStaticSecret",
+      "metadata": {
+        "name": "wallettracker-signing",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "vaultAuthRef": "identity",
+        "mount": "wallettracker",
+        "path": "dev/signing",
+        "type": "kv-v2",
+        "refreshAfter": "60s",
+        "hmacSecretData": true,
+        "destination": {
+          "name": "wallettracker-signing",
+          "create": true,
+          "type": "Opaque",
+          "transformation": {
+            "excludeRaw": true,
+            "excludes": [
+              ".*"
+            ],
+            "templates": {
+              "WALLET_TRACKER_SECRET": {
+                "text": "{{ .Secrets.SIGN_SECRET_WORD }}"
+              }
+            }
+          }
+        },
+        "rolloutRestartTargets": [
+          {
+            "kind": "Deployment",
+            "name": "wallettracker-api"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "secrets.hashicorp.com/v1beta1",
+      "kind": "VaultStaticSecret",
+      "metadata": {
+        "name": "wallettracker-rsa",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "vaultAuthRef": "identity",
+        "mount": "wallettracker",
+        "path": "dev/rsa",
+        "type": "kv-v2",
+        "refreshAfter": "60s",
+        "hmacSecretData": true,
+        "destination": {
+          "name": "wallettracker-rsa",
+          "create": true,
+          "type": "Opaque",
+          "transformation": {
+            "excludeRaw": true,
+            "excludes": [
+              ".*"
+            ],
+            "templates": {
+              "private_key.pem": {
+                "text": "{{ .Secrets.PRIVATE_KEY_BASE64 | b64dec }}"
+              },
+              "public_key.pem": {
+                "text": "{{ .Secrets.PUBLIC_KEY_BASE64 | b64dec }}"
+              }
+            }
+          }
+        },
+        "rolloutRestartTargets": [
+          {
+            "kind": "Deployment",
+            "name": "wallettracker-api"
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "secrets.hashicorp.com/v1beta1",
+      "kind": "VaultStaticSecret",
+      "metadata": {
+        "name": "harbor-pull",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "vaultAuthRef": "pull",
+        "mount": "wallettracker",
+        "path": "delivery/harbor-pull",
+        "type": "kv-v2",
+        "refreshAfter": "60s",
+        "hmacSecretData": true,
+        "destination": {
+          "name": "harbor-pull",
+          "create": true,
+          "type": "kubernetes.io/dockerconfigjson",
+          "transformation": {
+            "excludeRaw": true,
+            "excludes": [
+              ".*"
+            ],
+            "templates": {
+              ".dockerconfigjson": {
+                "text": "{{- $auth := printf \"%s:%s\" .Secrets.HARBOR_ROBOT_NAME .Secrets.HARBOR_ROBOT_SECRET | b64enc -}}{{- $entry := dict \"username\" .Secrets.HARBOR_ROBOT_NAME \"password\" .Secrets.HARBOR_ROBOT_SECRET \"auth\" $auth -}}{{- dict \"auths\" (dict \"registry.int.downops.win\" $entry) | toJson -}}"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "wallettracker-config",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "data": {
+        "DATABASE_NAME": "wallet_tracker",
+        "WALLET_TRACKER_DB_HOST": "mariadb",
+        "WALLET_TRACKER_DB_USER": "root",
+        "ENABLE_REGISTER": "true",
+        "WALLET_TRACKER_REQUIRE_MANAGED_KEYS": "true",
+        "WALLET_TRACKER_PRIVATE_KEY_FILE": "/run/wallettracker-rsa/private_key.pem",
+        "WALLET_TRACKER_PUBLIC_KEY_FILE": "/run/wallettracker-rsa/public_key.pem",
+        "WALLET_TRACKER_STDOUT_LOG": "true",
+        "WALLET_TRACKER_REQUIRE_RESTORE_CHECKPOINT": "false"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "mariadb",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "ports": [
+          {
+            "port": 3306,
+            "targetPort": 3306
+          }
+        ],
+        "selector": {
+          "app": "wallettracker-db"
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "StatefulSet",
+      "metadata": {
+        "name": "mariadb",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-5"
+        }
+      },
+      "spec": {
+        "serviceName": "mariadb",
+        "replicas": 1,
+        "persistentVolumeClaimRetentionPolicy": {
+          "whenDeleted": "Retain",
+          "whenScaled": "Retain"
+        },
+        "selector": {
+          "matchLabels": {
+            "app": "wallettracker-db"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "wallettracker-db"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "wallettracker",
+            "automountServiceAccountToken": false,
+            "terminationGracePeriodSeconds": 120,
+            "securityContext": {
+              "fsGroup": 999,
+              "fsGroupChangePolicy": "OnRootMismatch",
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "containers": [
+              {
+                "name": "mariadb",
+                "image": "mariadb:11.4.12",
+                "args": [
+                  "--innodb-buffer-pool-size=64M",
+                  "--max-connections=30",
+                  "--performance-schema=OFF",
+                  "--skip-name-resolve"
+                ],
+                "env": [
+                  {
+                    "name": "MARIADB_ROOT_PASSWORD",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "wallettracker-db",
+                        "key": "MARIADB_ROOT_PASSWORD"
+                      }
+                    }
+                  },
+                  {
+                    "name": "POD_IP",
+                    "valueFrom": {
+                      "fieldRef": {
+                        "fieldPath": "status.podIP"
+                      }
+                    }
+                  }
+                ],
+                "ports": [
+                  {
+                    "containerPort": 3306,
+                    "name": "mysql"
+                  }
+                ],
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 999,
+                  "runAsGroup": 999,
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "resources": {
+                  "requests": {
+                    "cpu": "50m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "data",
+                    "mountPath": "/var/lib/mysql"
+                  },
+                  {
+                    "name": "run",
+                    "mountPath": "/run/mysqld"
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ],
+                "startupProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-ec",
+                      "mariadb-admin ping --silent"
+                    ]
+                  },
+                  "periodSeconds": 5,
+                  "failureThreshold": 60
+                },
+                "livenessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-ec",
+                      "mariadb-admin ping --silent"
+                    ]
+                  },
+                  "periodSeconds": 15
+                },
+                "readinessProbe": {
+                  "exec": {
+                    "command": [
+                      "sh",
+                      "-ec",
+                      "MYSQL_PWD=\"$MARIADB_ROOT_PASSWORD\" mariadb --protocol=tcp -h \"$POD_IP\" -u root --batch -e \"SELECT 1\" >/dev/null"
+                    ]
+                  },
+                  "periodSeconds": 10
+                }
+              }
+            ],
+            "volumes": [
+              {
+                "name": "run",
+                "emptyDir": {}
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              }
+            ]
+          }
+        },
+        "volumeClaimTemplates": [
+          {
+            "metadata": {
+              "name": "data"
+            },
+            "spec": {
+              "accessModes": [
+                "ReadWriteOnce"
+              ],
+              "storageClassName": "local-path",
+              "resources": {
+                "requests": {
+                  "storage": "2Gi"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "wallettracker-api",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "10"
+        }
+      },
+      "spec": {
+        "replicas": 1,
+        "revisionHistoryLimit": 3,
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": {
+            "maxUnavailable": 0,
+            "maxSurge": 1
+          }
+        },
+        "selector": {
+          "matchLabels": {
+            "app": "wallettracker-api"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "wallettracker-api",
+              "wallettracker.io/database-client": "true"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "wallettracker",
+            "automountServiceAccountToken": false,
+            "imagePullSecrets": [
+              {
+                "name": "harbor-pull"
+              }
+            ],
+            "securityContext": {
+              "fsGroup": 10001,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "terminationGracePeriodSeconds": 45,
+            "containers": [
+              {
+                "name": "api",
+                "image": "registry.int.downops.win/wallettracker/backend:prepared-not-deployed",
+                "ports": [
+                  {
+                    "containerPort": 5000,
+                    "name": "http"
+                  }
+                ],
+                "envFrom": [
+                  {
+                    "configMapRef": {
+                      "name": "wallettracker-config"
+                    }
+                  },
+                  {
+                    "secretRef": {
+                      "name": "wallettracker-signing"
+                    }
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "DATABASE_ROOT_PASSWORD",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "wallettracker-db",
+                        "key": "MARIADB_ROOT_PASSWORD"
+                      }
+                    }
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "50m",
+                    "memory": "96Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "192Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "runAsGroup": 10001,
+                  "readOnlyRootFilesystem": true,
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "rsa",
+                    "mountPath": "/run/wallettracker-rsa",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  }
+                ],
+                "startupProbe": {
+                  "httpGet": {
+                    "path": "/api/v1/health",
+                    "port": 5000
+                  },
+                  "failureThreshold": 30,
+                  "periodSeconds": 5
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/api/v1/health",
+                    "port": 5000
+                  },
+                  "periodSeconds": 15
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/api/v1/ready",
+                    "port": 5000
+                  },
+                  "periodSeconds": 5
+                }
+              }
+            ],
+            "volumes": [
+              {
+                "name": "rsa",
+                "secret": {
+                  "secretName": "wallettracker-rsa",
+                  "defaultMode": 288
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {
+                  "medium": "Memory",
+                  "sizeLimit": "32Mi"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "wallettracker-api",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "type": "NodePort",
+        "externalTrafficPolicy": "Local",
+        "selector": {
+          "app": "wallettracker-api"
+        },
+        "ports": [
+          {
+            "port": 5000,
+            "targetPort": 5000,
+            "nodePort": 31410
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "wallettracker-migration",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "data": {
+        "require_restore.py": "\"\"\"Fail closed before production schema changes unless an operator marked restore.\"\"\"\nimport os,sys,time\nsys.path.insert(0,'/app')\n# Newly created Pods can briefly precede NetworkPolicy/dataplane convergence.\n# Wait for authenticated SQL, never treat a transport failure as restore proof.\nfrom sqlalchemy import create_engine,text\nfrom sqlalchemy.exc import OperationalError\nfrom migrate_all import database_url\nprobe=create_engine(database_url('mysql'),connect_args={'connect_timeout':5})\ntry:\n    for attempt in range(30):\n        try:\n            with probe.connect() as connection:connection.execute(text('SELECT 1'))\n            break\n        except OperationalError:\n            if attempt==29:raise SystemExit('Database connectivity did not converge; migration refused') from None\n            time.sleep(2)\nfinally:probe.dispose()\nif os.environ.get('WALLET_TRACKER_REQUIRE_RESTORE_CHECKPOINT','false').lower()=='true':\n    from sqlalchemy import text\n    from migrate_all import database_url\n    from sqlalchemy import create_engine\n    engine=create_engine(database_url('wallettracker_migration_metadata'))\n    try:\n        with engine.connect() as connection:\n            if connection.execute(text('SELECT COUNT(*) FROM restore_checkpoint WHERE id=1')).scalar()!=1:\n                raise RuntimeError()\n    except Exception:\n        raise SystemExit('Approved production restore checkpoint absent; migration refused') from None\n    finally:engine.dispose()\nfrom migrate_all import main\nmain()\n"
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "wallettracker-migrate",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/hook": "Sync",
+          "argocd.argoproj.io/hook-delete-policy": "BeforeHookCreation,HookSucceeded",
+          "argocd.argoproj.io/sync-wave": "0"
+        }
+      },
+      "spec": {
+        "backoffLimit": 0,
+        "activeDeadlineSeconds": 600,
+        "template": {
+          "metadata": {
+            "labels": {
+              "wallettracker.io/database-client": "true"
+            }
+          },
+          "spec": {
+            "restartPolicy": "Never",
+            "serviceAccountName": "wallettracker",
+            "automountServiceAccountToken": false,
+            "imagePullSecrets": [
+              {
+                "name": "harbor-pull"
+              }
+            ],
+            "securityContext": {
+              "fsGroup": 10001,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "containers": [
+              {
+                "name": "migrate",
+                "image": "registry.int.downops.win/wallettracker/backend:prepared-not-deployed",
+                "ports": [
+                  {
+                    "containerPort": 5000,
+                    "name": "http"
+                  }
+                ],
+                "envFrom": [
+                  {
+                    "configMapRef": {
+                      "name": "wallettracker-config"
+                    }
+                  },
+                  {
+                    "secretRef": {
+                      "name": "wallettracker-signing"
+                    }
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "DATABASE_ROOT_PASSWORD",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "wallettracker-db",
+                        "key": "MARIADB_ROOT_PASSWORD"
+                      }
+                    }
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "50m",
+                    "memory": "96Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "192Mi"
+                  }
+                },
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "runAsGroup": 10001,
+                  "readOnlyRootFilesystem": true,
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "rsa",
+                    "mountPath": "/run/wallettracker-rsa",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "tmp",
+                    "mountPath": "/tmp"
+                  },
+                  {
+                    "name": "migration",
+                    "mountPath": "/migration",
+                    "readOnly": true
+                  }
+                ],
+                "command": [
+                  "/app/.venv/bin/python",
+                  "/migration/require_restore.py"
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "rsa",
+                "secret": {
+                  "secretName": "wallettracker-rsa",
+                  "defaultMode": 288
+                }
+              },
+              {
+                "name": "tmp",
+                "emptyDir": {}
+              },
+              {
+                "name": "migration",
+                "configMap": {
+                  "name": "wallettracker-migration"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "default-deny",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "podSelector": {},
+        "policyTypes": [
+          "Ingress",
+          "Egress"
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "dns",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "podSelector": {},
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "database",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app": "wallettracker-db"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "wallettracker.io/database-client": "true"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 3306
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "api-egress",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "wallettracker.io/database-client": "true"
+          }
+        },
+        "policyTypes": [
+          "Egress"
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "podSelector": {
+                  "matchLabels": {
+                    "app": "wallettracker-db"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 3306
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "api-ingress",
+        "namespace": "wallettracker-dev",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "-20"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app": "wallettracker-api"
+          }
+        },
+        "policyTypes": [
+          "Ingress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              },
+              {
+                "ipBlock": {
+                  "cidr": "10.2.0.10/32"
+                }
+              },
+              {
+                "ipBlock": {
+                  "cidr": "10.2.0.201/32"
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 5000
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
