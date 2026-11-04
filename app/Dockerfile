@@ -13,7 +13,8 @@ RUN apk add --no-cache ca-certificates mariadb-connector-c \
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --chown=10001:10001 . .
+RUN chown 10001:10001 /app
 USER 10001:10001
 EXPOSE 5000
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_BUILD_REVISION=${BUILD_REVISION}
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 APP_BUILD_REVISION=${BUILD_REVISION} WALLET_TRACKER_REQUIRE_MANAGED_KEYS=true WALLET_TRACKER_STDOUT_LOG=true
 CMD ["/app/.venv/bin/uwsgi", "--http", "0.0.0.0:5000", "--wsgi-file", "main.py", "--callable", "app", "--master", "--processes", "2", "--threads", "2", "--die-on-term", "--need-app", "--vacuum"]
