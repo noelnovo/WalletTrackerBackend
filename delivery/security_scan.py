@@ -14,7 +14,26 @@ def main():
     env=dict(os.environ,SONAR_TOKEN=sonar['SONAR_TOKEN'],SONAR_HOST_URL=sonar['SONAR_HOST_URL'])
     cmd=['docker','run','--rm','--env','SONAR_TOKEN','--env','SONAR_HOST_URL','--volume',os.getcwd()+':/usr/src','sonarsource/sonar-scanner-cli:latest','-Dsonar.qualitygate.wait=true','-Dsonar.qualitygate.timeout=300']
     p=subprocess.run(cmd,capture_output=True,env=env)
-    if p.returncode:raise RuntimeError('SonarQube analysis/quality gate failed; diagnostics withheld')
+    if p.returncode:
+        output=(p.stdout+p.stderr).decode(errors='replace').lower()
+        # Emit fixed categories only: scanner output can include credentials.
+        hints={name:needle in output for name,needle in {
+            'quality_gate_rejected':'quality gate status: failed',
+            'unauthorized':'not authorized',
+            'authentication_failure':'authentication failed',
+            'project_missing':'project not found',
+            'permission_denied':'permission denied',
+            'network_failure':'failed to connect',
+            'dns_failure':'unknownhostexception',
+            'tls_failure':'sslhandshakeexception',
+            'coverage_path_failure':'cannot resolve',
+            'workdir_failure':'unable to create',
+            'analysis_submitted':'analysis report uploaded',
+            'invalid_source_path':'does not exist',
+            'oom':'outofmemoryerror',
+        }.items()}
+        print(json.dumps({'sonarqube_failure_categories':hints,'scanner_exit_code':p.returncode}))
+        raise RuntimeError('SonarQube analysis/quality gate failed; diagnostics withheld')
     print(json.dumps({'dependency_track_analyzed':True,'sonarqube_quality_gate_passed':True}))
 if __name__=='__main__':
     try:main()
