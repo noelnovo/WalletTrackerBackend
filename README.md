@@ -71,9 +71,11 @@ stamping an assumed baseline. Review and test schema changes before a release.
 Argo's migration hook waits for authenticated SQL and requires the manually
 approved production restore checkpoint. CI never creates that checkpoint.
 Changes to `delivery/environment-state.json` require review; production sync
-stays manual. Production backups run daily in-cluster; off-host recovery export
-is verified separately and must not be confused with automatic off-host rotation.
-Database and backup PVs use Retain.
+stays manual. By explicit owner policy, Kubernetes backups are **Vault-only**:
+application backup schedules and backup-only storage are removed. Vault backups
+do not contain application database data. The separate Proxmox migration recovery
+archives remain retained; there is no scheduled WalletTracker database backup.
+Live database PVs retain their existing Retain policy.
 
 Before new-primary writes, rollback requires verified database equality. After
 new writes, freeze and transfer the **current** database before restoring a prior

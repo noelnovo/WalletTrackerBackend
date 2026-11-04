@@ -3,6 +3,12 @@ from vault_contract import contract
 from render_manifests import resources
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 class DeliveryContract(unittest.TestCase):
+    def test_owner_vault_only_backup_policy(self):
+        state=json.loads((ROOT/'delivery/environment-state.json').read_text())
+        self.assertEqual(state['kubernetes_backup_policy'],'vault-only')
+        self.assertFalse(any(state['backup_enabled'].values()))
+        for env in ['dev','prod']:
+            self.assertFalse(any(r['metadata']['name'] in ['wallettracker-backups','wallettracker-backup'] for r in resources(env)))
     def test_no_recovery_and_no_early_jenkins_removal(self):
         plan=json.loads((ROOT/'delivery/migration-plan.json').read_text());self.assertIn('authorization_update',plan);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
     def test_database_exact_version_and_persistence(self):
