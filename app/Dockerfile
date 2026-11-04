@@ -7,12 +7,21 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.12-alpine
 ARG BUILD_REVISION=unknown
-RUN apk add --no-cache ca-certificates mariadb-connector-c \
+RUN python -m pip uninstall --yes pip \
+    && apk add --no-cache ca-certificates mariadb-connector-c \
     && addgroup -g 10001 -S appgroup \
     && adduser -u 10001 -S -G appgroup appuser
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
-COPY --chown=10001:10001 . .
+COPY --chown=10001:10001 *.py ./
+COPY --chown=10001:10001 endpoints/ ./endpoints/
+COPY --chown=10001:10001 exceptions/ ./exceptions/
+COPY --chown=10001:10001 migrations_main/ ./migrations_main/
+COPY --chown=10001:10001 migrations_tenant/ ./migrations_tenant/
+COPY --chown=10001:10001 models/ ./models/
+COPY --chown=10001:10001 repositories/ ./repositories/
+COPY --chown=10001:10001 utils/ ./utils/
+COPY --chown=10001:10001 validators/ ./validators/
 RUN chown 10001:10001 /app
 USER 10001:10001
 EXPOSE 5000
