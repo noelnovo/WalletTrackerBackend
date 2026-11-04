@@ -1,0 +1,38 @@
+{
+  "verified_at": "2026-11-04",
+  "production": {
+    "namespace": "wallettracker-prod",
+    "api": "https://api.downops.win",
+    "version": "1.0.1",
+    "source_revision": "7f740e4deae64b53cbaab3b41337f92d57a7871f",
+    "image_digest": "sha256:4b0ef806f9cd9e77925072d6ead1f5bc6e13a149110f5a9dc396e8308ed76886",
+    "initial_gitops_revision": "746219a89a09ea0f0804ee2ddfef21b88a6cb768",
+    "release_pipeline": 787,
+    "pipeline_result": "success",
+    "argocd": "manual sync; Synced/Healthy",
+    "mariadb_version": "11.4.12",
+    "noel_id": 1,
+    "noel_full_record_and_all_original_rows_accounts_keys_preserved": true,
+    "backup_job_passed_and_off_host_copy_verified": true,
+    "periodic_backups": "daily in-cluster; off-host recovery export verified separately"
+  },
+  "dev": {"namespace": "wallettracker-dev", "pipeline": 784, "result": "success", "live_registration_auth_refresh_logout_and_registered_tenant_redeployment_passed": true},
+  "android": {"gitlab_project_id": 31, "gitlab_path": "downops/wallet-tracker-android", "github": "noelnovo/WalletTracker", "unit_run": 41898103552, "main_vault_verification_run": 41899952807, "live_exact_backend_revision_verified": true, "apk_published": false},
+  "retirement": {
+    "deleted_guest_ids": [100, 101, 102],
+    "old_database_bind_directory_removed_after_cold_archive": "/mnt/mariadb_wallettracker_v2",
+    "old_tunnels": ["jenkins", "wallettracker-api"],
+    "jenkins_public_dns_and_proxy_removed": true,
+    "jenkins_oidc_client_removed_via_supported_api": true,
+    "old_dedicated_harbor_robot_removed": true,
+    "old_ssh_keys_removed": true,
+    "dedicated_vault_tokens_revoked": 4,
+    "retired_vault_records_soft_deleted": 8,
+    "retired_auth_roles": 6,
+    "retired_policies": 7,
+    "shared_credentials_and_mobile_signing_preserved": true,
+    "recovery_archives": "Proxmox:/var/backups/wallettracker-k8s-retirement/",
+    "database_recovery": "Proxmox:/var/backups/wallettracker-k8s/",
+    "terraform_destroy_used": false
+  }
+}
