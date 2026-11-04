@@ -1,6 +1,6 @@
 {
   "binding_request": "can you migrate wallettracker whole process to kubernetes argocd vso etc.? and then remove jenkins completely and leftovers?",
-  "state": "owner-authorized execution; production deletion remains gated on verified migration",
+  "state": "production cutover verified; old guests100/101/102 and dedicated native/Jenkins identities retired; see deployment-receipt.json",
   "vault_recovery_allowed": true,
   "authorization_update": "Owner explicitly authorized temporary recovery after asking the agent to handle secrets; supersedes earlier no-recovery choice. Preserve existing noel id1 record/verifier/tenant data and keys.",
   "ci": "GitLab CI explicitly approved; supersedes former backend GitHub-only CI exception",

@@ -1,9 +1,0 @@
-{
-  "backend_ci_provider": "GitLab CI, explicitly approved 2026-11-04",
-  "backend_old_github_roles_retirement": "operator-only after replacement proof; no active Vault change by this source update",
-  "legacy_roles": ["wallettracker-scan", "wallettracker-cd"],
-  "new_backend_contract": "delivery/vault_contract.py",
-  "mobile_github_role_must_remain": "wallettracker-mobile-ci",
-  "mobile_repository_remains_github_only": true,
-  "production_credentials_rotated": false
-}
