@@ -48,7 +48,18 @@ def main(env):
         request('https://argocd.int.downops.win/api/webhook','POST',{'object_kind':'push','ref':'refs/heads/'+branch,'project':{'web_url':'https://10.2.0.11/downops/wallet-tracker-backend'},'repository':{'url':'ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git'}},{'X-Gitlab-Event':'Push Hook'})
         key=tmp/'github-key';known=tmp/'known_hosts';key.write_text(mirror['SSH_PRIVATE_KEY']);key.chmod(0o600);known.write_text(mirror['KNOWN_HOSTS']);known.chmod(0o600)
         child['GIT_SSH_COMMAND']='ssh -i '+str(key)+' -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='+str(known)
-        command(['git','push','git@github.com:noelnovo/WalletTrackerBackend.git','HEAD:'+branch],child)
+        if env=='dev':command(['git','push','git@github.com:noelnovo/WalletTrackerBackend.git','HEAD:'+branch],child)
+        else:
+            # GitHub retains owner/admin-only bypass of its historical required
+            # Actions checks. Do not grant the CI deploy key a bypass or weaken
+            # protection. The approved release operator mirrors authoritative
+            # main using existing admin access; CI verifies exact equality.
+            print(json.dumps({'approved_production_mirror_pending':True,'gitops_revision':revision}),flush=True)
+            for _ in range(120):
+                refs=command(['git','ls-remote','git@github.com:noelnovo/WalletTrackerBackend.git','refs/heads/main'],child)
+                if refs.split() and refs.split()[0]==revision:break
+                time.sleep(5)
+            else:raise RuntimeError('Approved operator must mirror protected GitHub main to the authoritative GitOps revision')
         expected=IMAGE+':'+tag;app='wallettracker-'+env
         for _ in range(120):
             try:result=request('https://argocd.int.downops.win/api/v1/applications/'+app,headers={'Authorization':'Bearer '+status})
