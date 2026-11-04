@@ -9,7 +9,7 @@ def raw_request(url,method='GET',data=None,headers=None):
             self.sock=self._context.wrap_socket(socket.create_connection((address,self.port or 443),timeout=30),server_hostname=self.host)
     c=Connection(u.hostname,u.port or 443,context=ssl.create_default_context(),timeout=30)
     try:
-        c.request(method,u.path+('?' +u.query if u.query else ''),body=None if data is None else json.dumps(data).encode(),headers={'Content-Type':'application/json',**(headers or {})});r=c.getresponse();raw=r.read()
+        c.request(method,u.path+('?' +u.query if u.query else ''),body=None if data is None else json.dumps(data).encode(),headers={'Content-Type':'application/json','User-Agent':'Mozilla/5.0 WalletTracker-Delivery',**(headers or {})});r=c.getresponse();raw=r.read()
         if not 200<=r.status<300:raise RuntimeError('HTTPS request rejected (HTTP '+str(r.status)+'); response withheld')
         return raw,dict(r.getheaders())
     finally:c.close()
