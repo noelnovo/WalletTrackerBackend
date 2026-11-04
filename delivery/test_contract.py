@@ -44,6 +44,11 @@ class DeliveryContract(unittest.TestCase):
             for x in resources(env):
                 if x['kind']=='CronJob':self.assertEqual(x['spec']['suspend'],not json.loads((ROOT/'delivery/environment-state.json').read_text())['backup_enabled'][env])
             self.assertNotIn(':latest',json.dumps(resources(env)))
+    def test_disabled_backup_cannot_deadlock_initial_sync(self):
+        state=json.loads((ROOT/'delivery/environment-state.json').read_text())
+        for env in ['dev','prod']:
+            backup_names={r['metadata']['name'] for r in resources(env) if r['metadata']['name'] in ['wallettracker-backups','wallettracker-backup']}
+            self.assertEqual(backup_names,{'wallettracker-backups','wallettracker-backup'} if state['backup_enabled'][env] else set())
     def test_generator_check(self):
         p=subprocess.run([sys.executable,str(ROOT/'delivery/render_manifests.py'),'--check'],capture_output=True);self.assertEqual(p.returncode,0,p.stderr.decode())
 if __name__=='__main__':unittest.main()
