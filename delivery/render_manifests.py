@@ -16,6 +16,8 @@ def vss(name,ns,role,mount,path,templates,typ='Opaque',restart=False):
 def resources(env):
     ns='wallettracker-'+env;prod=env=='prod';root=ROOT
     state=json.loads((root/'delivery/environment-state.json').read_text())
+    if state.get('kubernetes_backup_policy')=='vault-only' and any(state['backup_enabled'].values()):
+        raise ValueError('Owner policy allows Kubernetes backups only for Vault')
     if state['production_api_enabled'] and not state['production_restore_verified']:raise ValueError('Production activation requires reviewed restore proof')
     # Namespaces are operator bootstrap resources, not dev-controlled cluster
     # resources. Per-environment AppProjects cannot target another namespace.
