@@ -69,7 +69,14 @@ def main(env):
                 if not any(x in str(error) for x in ['HTTP 404','HTTP 502','HTTP 503']):raise
                 time.sleep(5);continue
             state=result.get('status',{})
-            if state.get('sync',{}).get('revision')==revision and state.get('sync',{}).get('status')=='Synced' and state.get('health',{}).get('status')=='Healthy' and expected in state.get('summary',{}).get('images',[]):
+            if state.get('sync',{}).get('revision')==revision and state.get('sync',{}).get('status')=='Synced' and state.get('health',{}).get('status')=='Healthy':
+                # This Argo build does not populate status.summary.images. Read
+                # the actual application-owned Deployment through the same
+                # application-get-only identity; never drop the image proof.
+                resource=request('https://argocd.int.downops.win/api/v1/applications/'+app+'/resource?namespace='+app+'&resourceName=wallettracker-api&version=v1&kind=Deployment&group=apps',headers={'Authorization':'Bearer '+status})
+                deployed=json.loads(resource['manifest']);deployment=deployed.get('status',{})
+                if deployed['spec']['template']['spec']['containers'][0]['image']!=expected or deployment.get('readyReplicas',0)<1 or deployment.get('observedGeneration')!=deployed['metadata']['generation']:
+                    time.sleep(5);continue
                 host='api.downops.win' if env=='prod' else 'wallettracker-dev.int.downops.win'
                 try:
                     raw,headers=raw_request('https://'+host+'/api/v1/ready')
