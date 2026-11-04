@@ -13,7 +13,8 @@ class DeliveryContract(unittest.TestCase):
             items=resources(env);app=next(x for x in items if x['kind']=='Deployment');pod=app['spec']['template']['spec'];self.assertFalse(pod['automountServiceAccountToken']);self.assertTrue(pod['containers'][0]['securityContext']['readOnlyRootFilesystem']);self.assertEqual(pod['securityContext']['seccompProfile']['type'],'RuntimeDefault')
             cfg=next(x for x in items if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data'];self.assertEqual(cfg['WALLET_TRACKER_REQUIRE_MANAGED_KEYS'],'true')
     def test_prod_not_started_before_restore(self):
-        items=resources('prod');self.assertEqual(next(x for x in items if x['kind']=='Deployment')['spec']['replicas'],0)
+        state=json.loads((ROOT/'delivery/environment-state.json').read_text());items=resources('prod');self.assertEqual(next(x for x in items if x['kind']=='Deployment')['spec']['replicas'],int(state['production_api_enabled']))
+        if state['production_api_enabled']:self.assertTrue(state['production_restore_verified'])
         self.assertIn('restore_checkpoint',(ROOT/'delivery/require_restore.py').read_text())
     def test_vso_exact_outputs_exclude_raw_and_no_literals(self):
         for env in ['dev','prod']:
@@ -41,7 +42,7 @@ class DeliveryContract(unittest.TestCase):
     def test_deployment_uses_immutable_reference_and_manual_backup_enable(self):
         for env in ['dev','prod']:
             for x in resources(env):
-                if x['kind']=='CronJob':self.assertTrue(x['spec']['suspend'])
+                if x['kind']=='CronJob':self.assertEqual(x['spec']['suspend'],not json.loads((ROOT/'delivery/environment-state.json').read_text())['backup_enabled'][env])
             self.assertNotIn(':latest',json.dumps(resources(env)))
     def test_generator_check(self):
         p=subprocess.run([sys.executable,str(ROOT/'delivery/render_manifests.py'),'--check'],capture_output=True);self.assertEqual(p.returncode,0,p.stderr.decode())

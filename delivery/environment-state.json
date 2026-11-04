@@ -1,0 +1,6 @@
+{
+  "production_restore_verified": false,
+  "production_api_enabled": false,
+  "backup_enabled": {"dev": false, "prod": false},
+  "operator_rule": "Change these only through reviewed release source after the protected restore/key/account/row proofs and required backup checks pass. CI must never change this file."
+}
