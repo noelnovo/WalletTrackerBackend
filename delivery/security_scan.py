@@ -18,4 +18,4 @@ def main():
     print(json.dumps({'dependency_track_analyzed':True,'sonarqube_quality_gate_passed':True}))
 if __name__=='__main__':
     try:main()
-    except Exception as e:print(json.dumps({'security_gate_failed':True,'error_class':type(e).__name__,'details':'withheld'}));raise SystemExit(1)
+    except Exception as e:print(json.dumps({'security_gate_failed':True,'error_class':type(e).__name__,'safe_error':str(e) if isinstance(e,RuntimeError) else 'details withheld'}));raise SystemExit(1)
