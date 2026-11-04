@@ -26,7 +26,7 @@ with engine.connect() as c:
     c.execute(text("INSERT INTO mysql.global_priv (Host,User,Priv) SELECT '10.2.0.201',User,Priv FROM mysql.global_priv WHERE User='root' AND Host='%'"));c.commit()
     sql=pathlib.Path(__file__).with_name('adopt-pod-grant.sql').read_text()
     block=sql.split('DELIMITER //',1)[1].split('END//',1)[0]+'END'
-    c.exec_driver_sql(block);c.exec_driver_sql('FLUSH PRIVILEGES')
+    c.execute(text(block));c.exec_driver_sql('FLUSH PRIVILEGES')
     assert c.execute(text("SELECT COUNT(*) FROM mysql.global_priv WHERE User='root' AND Host='10.42.0.%' AND Priv=(SELECT Priv FROM mysql.global_priv WHERE User='root' AND Host='10.2.0.201')")).scalar()==1
 engine.dispose()
 print('Real synthetic MariaDB main/tenant idempotence and unchanged account-privilege adoption passed')

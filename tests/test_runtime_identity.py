@@ -17,3 +17,12 @@ def test_invalid_pair_does_not_disclose_contents(monkeypatch,tmp_path,keys):
     _,public=configure(monkeypatch,tmp_path,keys);public.write_text('synthetic-invalid-not-a-key')
     with pytest.raises(RuntimeError) as e:load_managed_identity()
     assert 'synthetic-invalid' not in str(e.value)
+def test_managed_app_reports_built_revision_without_key_generation(monkeypatch,tmp_path,keys):
+    from app import create_app
+    from sqlalchemy import URL
+    from unittest import mock
+    configure(monkeypatch,tmp_path,keys);monkeypatch.setenv('WALLET_TRACKER_REQUIRE_MANAGED_KEYS','true');monkeypatch.setenv('WALLET_TRACKER_STDOUT_LOG','true');monkeypatch.setenv('APP_BUILD_REVISION','a'*40)
+    with mock.patch('app.generate_keys_file') as generate:
+        app=create_app(database_uri=URL.create('sqlite',database=str(tmp_path/'probe.db')))
+        response=app.test_client().get('/api/v1/health');assert response.status_code==200
+        assert response.headers['X-WalletTracker-Revision']=='a'*40;generate.assert_not_called()
