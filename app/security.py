@@ -4,8 +4,10 @@ import ipaddress
 import os
 import time
 from flask import current_app, jsonify, request
-from sqlalchemy import delete, insert, update
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import case, delete
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import SQLAlchemyError
 from db import db
 from models.Sync import RateBucket
 
@@ -58,19 +60,20 @@ def install_security(app):
         table = RateBucket.__table__
         try:
             # Separate transaction: a later auth rollback cannot undo a failed attempt.
+            # Cleanup must commit BEFORE the upsert so expiry-index gap locks cannot
+            # deadlock concurrent first attempts for a newly-created bucket.
             with db.engine.begin() as conn:
                 conn.execute(delete(table).where(table.c.expires < now - 3600))
-                changed = conn.execute(update(table).where(table.c.id == key, table.c.hits < limit).values(hits=table.c.hits + 1)).rowcount
-                if changed:
-                    return None
-                exists = conn.execute(db.select(table.c.id).where(table.c.id == key)).first()
-                if not exists:
-                    conn.execute(insert(table).values(id=key, hits=1, expires=(bucket + 1) * period))
-                    return None
-        except IntegrityError:
-            # Concurrent first attempt: retry through the same atomic update.
             with db.engine.begin() as conn:
-                if conn.execute(update(table).where(table.c.id == key, table.c.hits < limit).values(hits=table.c.hits + 1)).rowcount:
+                increment = case((table.c.hits <= limit, table.c.hits + 1), else_=table.c.hits)
+                values = dict(id=key, hits=1, expires=(bucket + 1) * period)
+                if conn.dialect.name == 'mysql':
+                    statement = mysql_insert(table).values(**values).on_duplicate_key_update(hits=increment)
+                else:
+                    statement = sqlite_insert(table).values(**values).on_conflict_do_update(index_elements=['id'], set_={'hits': increment})
+                conn.execute(statement)
+                hits = conn.execute(db.select(table.c.hits).where(table.c.id == key)).scalar_one()
+                if hits <= limit:
                     return None
         except SQLAlchemyError:
             return jsonify(error='Authentication temporarily unavailable'), 503
