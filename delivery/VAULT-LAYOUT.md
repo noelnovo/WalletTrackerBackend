@@ -1,8 +1,9 @@
 # WalletTracker Vault layout
 
-**Current follow-up:** owner approved dev-only consolidation and a production
-plan. The operations MCP is blocked by `Insufficient Balance`; staging/cutover is
-not verified. Active runtime readers are therefore unchanged. The executable
+**Current follow-up:** owner specified `dev/`, `prod/`, and shared `delivery/`
+under this app prefix and approved dev-only consolidation plus a production
+plan. The operations MCP is blocked by `Insufficient Balance`; values, policies
+and cutover have not been independently verified. Active runtime readers are unchanged. The executable
 handoff is [DOWNOPS-VAULT-HANDOFF.md](DOWNOPS-VAULT-HANDOFF.md).
 
 The canonical app namespace is **KV-v2 mount `downops`, prefix
@@ -13,12 +14,12 @@ WalletTracker secrets. Logical paths below omit Vault's API-only `/data/` segmen
 
 | Record | Purpose |
 | --- | --- |
-| `downops/apps/wallettracker/mobile` | Existing **production** Android keystore and build configuration |
-| `downops/apps/wallettracker/signing` | Legacy backend API-v1 `SIGN_SECRET_WORD`; **not** an APK signing key |
-| `downops/apps/wallettracker/rsa` | Production server identity/JWT RSA key pair |
-| `downops/apps/wallettracker/runtime` | Production database/runtime credential |
+| `downops/apps/wallettracker/prod/mobile` | Owner-specified **production** Android keystore and build configuration |
+| `downops/apps/wallettracker/prod/signing` | Legacy backend API-v1 `SIGN_SECRET_WORD`; **not** an APK signing key |
+| `downops/apps/wallettracker/prod/rsa` | Production server identity/JWT RSA key pair |
+| `downops/apps/wallettracker/prod/runtime` | Production database/runtime credential |
 | `wallettracker/dev/database`, `wallettracker/dev/rsa`, `wallettracker/dev/signing` | Existing isolated dev identities introduced during the earlier Kubernetes cutover |
-| `wallettracker/delivery/*` | Existing Harbor, repository/mirror and Argo delivery credentials; some readers serve production as well as dev |
+| `downops/apps/wallettracker/delivery/*` | Canonical shared Harbor, repository/mirror and Argo delivery records; existing readers still use `wallettracker/delivery/*` pending cutover |
 
 Similar names across dev/prod do not establish equal secret values. The previous
 cutover generated independent dev identities; this task has not read/exported
@@ -47,6 +48,12 @@ Target layout for a subsequent owner-managed, unchanged-value migration:
 | `wallettracker/dev/rsa` | `downops/apps/wallettracker/dev/rsa` |
 | `wallettracker/dev/signing` | `downops/apps/wallettracker/dev/signing`, only while its legacy reader is retained |
 | `wallettracker/delivery/<name>` | `downops/apps/wallettracker/delivery/<name>` |
+| `downops/apps/wallettracker/{runtime,rsa,signing,mobile}` | `downops/apps/wallettracker/prod/{runtime,rsa,signing,mobile}`; production plan only |
+
+Shared delivery record names are `harbor-ci`, `harbor-pull`, `gitops-read`,
+`github-mirror`, `argocd-dev`, and `argocd-prod`. Keep a single canonical copy per
+credential, not duplicate delivery folders under each environment. Do not create
+the superseded proposed path `dev/delivery/argocd`.
 
 Do not regenerate passwords/keys during a path move. Stage each destination with
 CAS, abort if an existing destination differs, update exact reader policies and

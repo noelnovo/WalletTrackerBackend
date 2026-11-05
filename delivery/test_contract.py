@@ -19,7 +19,10 @@ class DeliveryContract(unittest.TestCase):
         c=contract(canonical_dev=True)
         self.assertIsNone(c['new_kv_mount'])
         self.assertNotIn('wallettracker/data/dev/',c['policies']['wallettracker-dev-identity'])
-        self.assertIn('downops/data/apps/wallettracker/dev/delivery/argocd',c['policies']['wallettracker-ci-dev'])
+        self.assertIn('downops/data/apps/wallettracker/delivery/argocd-dev',c['policies']['wallettracker-ci-dev'])
+        self.assertIn('downops/data/apps/wallettracker/delivery/harbor-ci',c['policies']['wallettracker-ci-dev'])
+        self.assertIn('downops/data/apps/wallettracker/delivery/harbor-pull',c['policies']['wallettracker-dev-pull'])
+        self.assertNotIn('downops/data/apps/wallettracker/dev/delivery/',str(c['required_input_records']))
     def test_legacy_bootstrap_cannot_create_root_engines_or_credentials(self):
         p=subprocess.run([sys.executable,str(ROOT/'delivery/bootstrap_vault.py'),'--apply','--credentials-file','/nonexistent'],capture_output=True,text=True)
         self.assertNotEqual(p.returncode,0)
