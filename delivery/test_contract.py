@@ -3,6 +3,27 @@ from vault_contract import contract
 from render_manifests import resources
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 class DeliveryContract(unittest.TestCase):
+    def test_network_access_is_owned_by_existing_firewall(self):
+        items=resources('dev')
+        cfg=next(x for x in items if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']
+        self.assertNotIn('WALLET_TRACKER_DEV_NETWORKS',cfg)
+        self.assertEqual(cfg['WALLET_TRACKER_TRUSTED_PROXIES'],'10.2.0.10/32')
+        self.assertEqual(cfg['WALLET_TRACKER_V2_ONLY'],'true')
+    def test_live_vault_readers_wait_for_verified_staging(self):
+        items=resources('dev')
+        actual={x['metadata']['name']:(x['spec']['mount'],x['spec']['path']) for x in items if x['kind']=='VaultStaticSecret'}
+        self.assertEqual(actual['wallettracker-db'],('wallettracker','dev/database'))
+        self.assertEqual(actual['wallettracker-rsa'],('wallettracker','dev/rsa'))
+        self.assertEqual(actual['wallettracker-signing'],('wallettracker','dev/signing'))
+        self.assertEqual(actual['harbor-pull'],('wallettracker','delivery/harbor-pull'))
+        c=contract(canonical_dev=True)
+        self.assertIsNone(c['new_kv_mount'])
+        self.assertNotIn('wallettracker/data/dev/',c['policies']['wallettracker-dev-identity'])
+        self.assertIn('downops/data/apps/wallettracker/dev/delivery/argocd',c['policies']['wallettracker-ci-dev'])
+    def test_legacy_bootstrap_cannot_create_root_engines_or_credentials(self):
+        p=subprocess.run([sys.executable,str(ROOT/'delivery/bootstrap_vault.py'),'--apply','--credentials-file','/nonexistent'],capture_output=True,text=True)
+        self.assertNotEqual(p.returncode,0)
+        self.assertIn('writes are retired',p.stdout)
     def test_owner_vault_only_backup_policy(self):
         state=json.loads((ROOT/'delivery/environment-state.json').read_text())
         self.assertEqual(state['kubernetes_backup_policy'],'vault-only')

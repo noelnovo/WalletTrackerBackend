@@ -6,6 +6,8 @@ Git credential helpers return secrets only to native Git over its private pipe.
 import json,os,pathlib,re,subprocess,sys,tempfile,time
 from ci_access import Vault,request,raw_request
 IMAGE='registry.int.downops.win/wallettracker/backend';PUSH='registry.downops.win/wallettracker/backend'
+# Switch dev only after the owner-managed stage-and-policy receipt; no missing-secret fallback.
+STATUS_SECRET_PATHS={'dev':'wallettracker/data/delivery/argocd-dev','prod':'wallettracker/data/delivery/argocd-prod'}
 def command(args,env=None,input=None):
     p=subprocess.run(args,input=input,capture_output=True,env=env)
     if p.returncode:raise RuntimeError('Delivery command failed: '+args[0]+'; credential-bearing diagnostics withheld')
@@ -19,7 +21,7 @@ def main(env):
         command(['git','fetch','origin','main']);command(['git','merge-base','--is-ancestor',sha,'origin/main'])
     elif os.environ.get('CI_COMMIT_BRANCH')!='dev':raise RuntimeError('Dev publication must originate on dev')
     tag='dev-'+version+'-'+sha[:8] if env=='dev' else version;target=PUSH+':'+tag
-    vault=Vault('wallettracker-ci-'+env);robot=vault.read('wallettracker/data/delivery/harbor-ci');mirror=vault.read('wallettracker/data/delivery/github-mirror');status=vault.read('wallettracker/data/delivery/argocd-'+env)['TOKEN']
+    vault=Vault('wallettracker-ci-'+env);robot=vault.read('wallettracker/data/delivery/harbor-ci');mirror=vault.read('wallettracker/data/delivery/github-mirror');status=vault.read(STATUS_SECRET_PATHS[env])['TOKEN']
     with tempfile.TemporaryDirectory(prefix='wallettracker-delivery-') as tmp:
         tmp=pathlib.Path(tmp);tmp.chmod(0o700);child=dict(os.environ,DOCKER_CONFIG=str(tmp/'docker'))
         command(['docker','login','registry.downops.win','--username',robot['HARBOR_ROBOT_NAME'],'--password-stdin'],child,robot['HARBOR_ROBOT_SECRET'].encode())

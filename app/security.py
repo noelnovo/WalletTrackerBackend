@@ -24,27 +24,11 @@ def client_address():
     return address
 
 
-def in_networks(address, networks):
-    peer = ipaddress.ip_address(address)
-    return any(peer in ipaddress.ip_network(cidr) for cidr in networks)
-
-
-def private_development_api():
+def enforce_api_version():
     probe = request.path.rstrip('/').endswith(('/health', '/ready'))
     if os.environ.get('WALLET_TRACKER_V2_ONLY', 'false').lower() == 'true' and request.path.startswith('/api/v1/') and not probe:
         return jsonify(error='Update the development client to API v2'), 410
-    networks = current_app.config['DEV_ALLOWED_NETWORKS']
-    if not networks or not request.path.startswith('/api/') or probe:
-        return None
-    try:
-        trusted = in_networks(request.remote_addr or '', current_app.config['TRUSTED_PROXY_NETWORKS'])
-        if request.headers.get('X-Forwarded-For') and not trusted:
-            return jsonify(error='Untrusted development proxy'), 403
-        if in_networks(client_address(), networks):
-            return None
-    except ValueError:
-        pass
-    return jsonify(error='Development API is available only on the private network'), 403
+    return None
 
 
 def consume_bucket(key, now, expires, limit):
@@ -100,7 +84,6 @@ def security_headers(response):
 def install_security(app):
     app.config.setdefault('MAX_CONTENT_LENGTH', 256 * 1024)
     app.config.setdefault('TRUSTED_PROXY_NETWORKS', [value for value in os.environ.get('WALLET_TRACKER_TRUSTED_PROXIES', '').split(',') if value])
-    app.config.setdefault('DEV_ALLOWED_NETWORKS', [value for value in os.environ.get('WALLET_TRACKER_DEV_NETWORKS', '').split(',') if value])
-    app.before_request(private_development_api)
+    app.before_request(enforce_api_version)
     app.before_request(throttle)
     app.after_request(security_headers)

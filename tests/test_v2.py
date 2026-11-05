@@ -108,12 +108,28 @@ def test_unauthenticated_sync(client):
     assert client.get('/api/v2/sync').status_code == 401
 
 
-def test_private_dev_api_does_not_trust_external_forwarded_headers(app, client):
-    app.config.update(DEV_ALLOWED_NETWORKS=['10.2.0.0/24'], TRUSTED_PROXY_NETWORKS=['10.2.0.10/32'])
-    assert client.get('/api/v2/sync', environ_base={'REMOTE_ADDR': '203.0.113.1'}, headers={'X-Forwarded-For': '10.2.0.13'}).status_code == 403
-    assert client.get('/api/v2/sync', environ_base={'REMOTE_ADDR': '10.2.0.10'}, headers={'X-Forwarded-For': '203.0.113.1'}).status_code == 403
-    assert client.get('/api/v2/sync', environ_base={'REMOTE_ADDR': '10.2.0.10'}, headers={'X-Forwarded-For': '10.2.0.13'}).status_code == 401
-    assert client.get('/api/v2/sync', environ_base={'REMOTE_ADDR': '10.2.0.100'}, headers={'X-Forwarded-For': '203.0.113.1'}).status_code == 403
+@pytest.mark.parametrize('address', ['203.0.113.1', '192.168.1.246', '10.2.0.13'])
+def test_client_network_does_not_replace_authentication(v2, address):
+    client, headers, _ = v2
+    peer = {'REMOTE_ADDR': address}
+    assert client.get('/api/v2/sync', environ_base=peer).status_code == 401
+    assert client.get('/api/v2/sync', environ_base=peer, headers=headers).status_code == 200
+
+
+def test_trusted_proxy_identifies_separate_rate_limit_clients(app, client):
+    app.config.update(TRUSTED_PROXY_NETWORKS=['10.2.0.10/32'], RATE_LIMIT_DISABLED=False)
+    peer = {'REMOTE_ADDR': '10.2.0.10'}
+    for _ in range(10):
+        assert client.post('/api/v2/login', json={}, environ_base=peer, headers={'X-Forwarded-For': '203.0.113.1'}).status_code == 401
+    assert client.post('/api/v2/login', json={}, environ_base=peer, headers={'X-Forwarded-For': '203.0.113.1'}).status_code == 429
+    assert client.post('/api/v2/login', json={}, environ_base=peer, headers={'X-Forwarded-For': '203.0.113.2'}).status_code == 401
+
+
+def test_dev_v1_write_guard_remains_enabled(client, monkeypatch):
+    monkeypatch.setenv('WALLET_TRACKER_V2_ONLY', 'true')
+    assert client.post('/api/v1/login/', json={}).status_code == 410
+    assert client.get('/api/v1/health').status_code == 200
+    assert client.get('/api/v2/sync').status_code == 401
 
 
 def test_invalid_json_shapes_are_rejected(v2):

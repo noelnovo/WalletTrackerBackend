@@ -1,5 +1,8 @@
 # Development API v2 — exposure, data and security
 
+Vault record purposes, the canonical prefix and the existing shared-reader
+migration boundary are documented in [VAULT-LAYOUT.md](VAULT-LAYOUT.md).
+
 ## Observed exposure (2026-11-05)
 
 - Internal resolution: `wallettracker-dev.int.downops.win -> 10.2.0.10`.
@@ -13,15 +16,20 @@
   per-application Deployment in this repo. Do not deploy a duplicate connector
   or put its shared tunnel token into this application's secret scope.
 
-**Private DNS alone is not an access-control boundary.** The observed NPM vhost
-has no client-IP ACL. We did not perform an off-LAN port scan, inspect router
-NAT or query the live shared tunnel configuration, so absence of all alternate
-public paths is not proven. The dev API config now also enforces application
-client networks `10.2.0.0/24,192.168.1.0/24`; forwarded IPs are honored only
-from the exact NPM peer `10.2.0.10/32`. Tests reject spoofed forwarded headers.
-Confirm the live socket peer and approved VPN ranges before expanding this list.
-Health/readiness remain available to Kubernetes probes; finance/auth routes do
-not gain a probe exemption. Production manifests and routing are unchanged.
+**Network access is controlled by the existing router firewall.** The owner
+confirmed that traffic from `192.168.1.0/24` to `10.2.0.0/24` is denied by default,
+with a specific exception for the phone. The temporary backend LAN allowlist is
+removed: the API does not duplicate that network policy or allow the whole home
+LAN. Router rules, Nginx configuration and Kubernetes NetworkPolicies are unchanged.
+
+`WALLET_TRACKER_TRUSTED_PROXIES=10.2.0.10/32` remains only to identify clients
+behind NPM for rate limiting; it is not an IP access rule. Forwarded IPs supplied
+by other peers are ignored. Authentication and the dev v1-write guard remain.
+
+Private DNS alone is not an access-control boundary. We did not independently
+audit the router firewall/NAT, perform an off-LAN probe or query the live shared
+tunnel configuration. The firewall boundary above is owner-confirmed, not an
+independent external-reachability proof. Production is unchanged.
 
 ## V2 contract
 
@@ -91,7 +99,7 @@ off-cluster recovery plan, not an assumption that Vault contains finance data.
 ## Tests
 
 Application tests cover pagination, conflict/retry/tombstone semantics, exact
-bill cents, refresh replay/logout, malformed input, rate limits and dev-network
-header spoofing. `delivery/v2_mariadb_smoke.py`, invoked by the real migration
+bill cents, refresh replay/logout, malformed input, rate limits and forwarded-IP
+spoofing protection for rate-limit identity. `delivery/v2_mariadb_smoke.py`, invoked by the real migration
 job, also exercises actual MariaDB concurrency, distinct tenant isolation and
 concurrent refresh reuse. It refuses non-CI or non-`*_ci` databases.
