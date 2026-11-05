@@ -2,6 +2,7 @@
 import hashlib
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import date
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
@@ -44,27 +45,103 @@ def validate_payload(kind, payload, session):
     day = payload.get('date')
     if not isinstance(day, str) or date.fromisoformat(day).isoformat() != day:
         raise ValueError('Expected ISO date')
-    result = dict(amount_minor=amount, currency=currency, date=day,
-                  description=label(payload.get('description')))
+    result = {'amount_minor': amount, 'currency': currency, 'date': day,
+              'description': label(payload.get('description'))}
     if kind == 'expense':
-        category_id = identifier(payload.get('category_id'))
-        category = session.get(SyncRecord, category_id)
-        if not category or category.kind != 'category' or category.deleted:
-            raise ValueError('Choose an active category')
-        result['category_id'] = category_id
+        result['category_id'] = category_reference(payload.get('category_id'), session)
     else:
-        participants = payload.get('participants')
-        if not isinstance(participants, list) or not 2 <= len(participants) <= 100:
-            raise ValueError('A bill needs 2–100 people')
-        participants = [label(person, 80) for person in participants]
-        if len(set(participants)) != len(participants):
-            raise ValueError('Use unique participant names')
-        paid_by = label(payload.get('paid_by'), 80)
-        if paid_by not in participants:
-            raise ValueError('The payer must be a participant')
-        share, remainder = divmod(amount, len(participants))
-        result.update(participants=participants, paid_by=paid_by,
-                      shares=[dict(name=person, amount_minor=share + int(i < remainder)) for i, person in enumerate(participants)])
+        result.update(bill_split(payload, amount))
+    return result
+
+
+def category_reference(value, session):
+    category_id = identifier(value)
+    category = session.get(SyncRecord, category_id)
+    if not category or category.kind != 'category' or category.deleted:
+        raise ValueError('Choose an active category')
+    return category_id
+
+
+def bill_split(payload, amount):
+    participants = payload.get('participants')
+    if not isinstance(participants, list) or not 2 <= len(participants) <= 100:
+        raise ValueError('A bill needs 2–100 people')
+    participants = [label(person, 80) for person in participants]
+    if len(set(participants)) != len(participants):
+        raise ValueError('Use unique participant names')
+    paid_by = label(payload.get('paid_by'), 80)
+    if paid_by not in participants:
+        raise ValueError('The payer must be a participant')
+    share, remainder = divmod(amount, len(participants))
+    return {'participants': participants, 'paid_by': paid_by,
+            'shares': [{'name': person, 'amount_minor': share + int(i < remainder)} for i, person in enumerate(participants)]}
+
+
+@dataclass(frozen=True)
+class Mutation:
+    operation_id: str
+    record_id: str
+    expected: int
+    kind: str
+    deleted: bool
+    payload: object
+    fingerprint: str
+
+
+def validate_mutation(operation):
+    if not isinstance(operation, dict):
+        raise ValueError('Invalid operation')
+    operation_id = identifier(operation.get('operation_id'))
+    record_id = identifier(operation.get('id'))
+    expected = integer(operation.get('base_version'), 0, 2**31 - 1)
+    kind = operation.get('kind')
+    deleted = operation.get('deleted', False)
+    if kind not in ('category', 'expense', 'bill') or type(deleted) is not bool:
+        raise ValueError('Invalid kind or deleted flag')
+    fingerprint = hashlib.sha256(json.dumps(operation, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return Mutation(operation_id, record_id, expected, kind, deleted, operation.get('payload'), fingerprint)
+
+
+def ensure_category_empty(session, record_id):
+    expense = session.execute(select(SyncRecord.id).where(SyncRecord.kind == 'expense', SyncRecord.deleted.is_(False), SyncRecord.payload['category_id'].as_string() == record_id).limit(1)).first()
+    if expense:
+        raise ValueError('Move or delete category expenses first')
+
+
+def write_record(session, clock, mutation, row):
+    if mutation.deleted and mutation.kind == 'category':
+        ensure_category_empty(session, mutation.record_id)
+    if mutation.deleted:
+        payload = row.payload if row else {}
+    else:
+        payload = validate_payload(mutation.kind, mutation.payload, session)
+    clock.revision += 1
+    if not row:
+        row = SyncRecord(id=mutation.record_id, kind=mutation.kind)
+        session.add(row)
+    row.version = mutation.expected + 1
+    row.revision = clock.revision
+    row.deleted = mutation.deleted
+    row.payload = payload
+    session.flush()
+    return {'operation_id': mutation.operation_id, 'status': 'applied', 'record': row.public()}
+
+
+def apply_mutation(session, clock, operation):
+    mutation = validate_mutation(operation)
+    receipt = session.get(SyncReceipt, mutation.operation_id)
+    if receipt:
+        if receipt.digest != mutation.fingerprint:
+            raise ValueError('Operation id reused with different content')
+        return receipt.result
+    row = session.get(SyncRecord, mutation.record_id)
+    current_version = row.version if row else 0
+    if current_version != mutation.expected or (row and row.kind != mutation.kind):
+        result = {'operation_id': mutation.operation_id, 'status': 'conflict', 'remote': row.public() if row else None}
+    else:
+        result = write_record(session, clock, mutation, row)
+    session.add(SyncReceipt(id=mutation.operation_id, digest=mutation.fingerprint, result=result))
+    session.flush()
     return result
 
 
@@ -99,50 +176,10 @@ def push():
     if not isinstance(operations, list) or not 1 <= len(operations) <= 100:
         return jsonify(error='Provide 1–100 operations'), 400
     session = get_tenant_session(g.user)
-    results = []
     try:
         # A tenant-local clock serializes writers and gives a commit-ordered cursor.
         clock = session.execute(select(SyncClock).where(SyncClock.id == 1).with_for_update()).scalar_one()
-        for operation in operations:
-            if not isinstance(operation, dict):
-                raise ValueError('Invalid operation')
-            operation_id = identifier(operation.get('operation_id'))
-            record_id = identifier(operation.get('id'))
-            expected = integer(operation.get('base_version'), 0, 2**31 - 1)
-            kind = operation.get('kind')
-            deleted = operation.get('deleted', False)
-            if kind not in ('category', 'expense', 'bill') or type(deleted) is not bool:
-                raise ValueError('Invalid kind or deleted flag')
-            fingerprint = hashlib.sha256(json.dumps(operation, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-            receipt = session.get(SyncReceipt, operation_id)
-            if receipt:
-                if receipt.digest != fingerprint:
-                    raise ValueError('Operation id reused with different content')
-                results.append(receipt.result)
-                continue
-            row = session.get(SyncRecord, record_id)
-            if (row.version if row else 0) != expected or (row and row.kind != kind):
-                result = dict(operation_id=operation_id, status='conflict', remote=row.public() if row else None)
-            else:
-                if deleted and kind == 'category':
-                    # Do not silently cascade-delete expenses, including offline ones.
-                    expense = session.execute(select(SyncRecord.id).where(SyncRecord.kind == 'expense', SyncRecord.deleted.is_(False), SyncRecord.payload['category_id'].as_string() == record_id).limit(1)).first()
-                    if expense:
-                        raise ValueError('Move or delete category expenses first')
-                payload = row.payload if deleted and row else ({} if deleted else validate_payload(kind, operation.get('payload'), session))
-                clock.revision += 1
-                if not row:
-                    row = SyncRecord(id=record_id, kind=kind)
-                    session.add(row)
-                row.version = expected + 1
-                row.revision = clock.revision
-                row.deleted = deleted
-                row.payload = payload
-                session.flush()
-                result = dict(operation_id=operation_id, status='applied', record=row.public())
-            session.add(SyncReceipt(id=operation_id, digest=fingerprint, result=result))
-            session.flush()
-            results.append(result)
+        results = [apply_mutation(session, clock, operation) for operation in operations]
         session.commit()
         return jsonify(results=results)
     except (ValueError, TypeError, AttributeError) as error:

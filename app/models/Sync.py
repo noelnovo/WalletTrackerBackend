@@ -40,8 +40,8 @@ class SyncRecord(db.Model):
     payload = db.Column(db.JSON, nullable=False)
 
     def public(self):
-        return dict(id=self.id, kind=self.kind, version=self.version,
-                    revision=self.revision, deleted=self.deleted, payload=self.payload)
+        return {'id': self.id, 'kind': self.kind, 'version': self.version,
+                'revision': self.revision, 'deleted': self.deleted, 'payload': self.payload}
 
 
 class SyncReceipt(db.Model):

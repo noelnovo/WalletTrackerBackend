@@ -15,7 +15,12 @@ def report(values):
     issues = request(url + '/api/issues/search?' + urlencode({'componentKeys': project, 'resolved': 'false', 'inNewCodePeriod': 'true', 'ps': 100}), headers=headers)
     for issue in issues.get('issues', []):
         print(json.dumps({key: issue.get(key) for key in ('rule', 'message', 'component', 'line', 'type', 'severity')}), flush=True)
-    hotspots = request(url + '/api/hotspots/search?' + urlencode({'projectKey': project, 'status': 'TO_REVIEW', 'ps': 100}), headers=headers)
+    try:
+        hotspots = request(url + '/api/hotspots/search?' + urlencode({'projectKey': project, 'status': 'TO_REVIEW', 'ps': 100}), headers=headers)
+    except RuntimeError:
+        # Analysis-scoped identities may browse issues without hotspot-review authority.
+        print(json.dumps({'hotspot_details': 'not permitted for this read-only diagnostic identity'}), flush=True)
+        return
     for hotspot in hotspots.get('hotspots', []):
         print(json.dumps({'hotspot': hotspot.get('key'), 'message': hotspot.get('message'), 'component': hotspot.get('component'), 'line': hotspot.get('line')}), flush=True)
 

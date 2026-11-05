@@ -31,7 +31,7 @@ def upgrade():
         revision_number += 1
         amount = int((Decimal(str(row['price'])) * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
         connection.execute(records.insert().values(id=str(uuid.uuid5(uuid.NAMESPACE_URL, f'wallettracker:expense:{row["id"]}')), kind='expense', version=1, revision=revision_number, deleted=False,
-                           payload=dict(amount_minor=amount, currency='EUR', description=row['description'] or 'Expense', date=str(row['expenseDate'])[:10], category_id=category_ids[row['category']])))
+                           payload={'amount_minor': amount, 'currency': 'EUR', 'description': row['description'] or 'Expense', 'date': str(row['expenseDate'])[:10], 'category_id': category_ids[row['category']]}))
     connection.execute(clock.insert().values(id=1, revision=revision_number))
 
 

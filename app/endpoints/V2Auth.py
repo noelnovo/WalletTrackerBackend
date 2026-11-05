@@ -15,6 +15,7 @@ from utils.Cryptography import hash_password
 from utils.Multitenant import create_tenant_user_and_db
 
 v2auth = Blueprint('v2auth', __name__, url_prefix='/api/v2')
+INVALID_CREDENTIALS = 'Invalid credentials'
 
 
 def digest(value):
@@ -30,10 +31,10 @@ def tokens(session):
     now = int(time.time())
     refresh = secrets.token_urlsafe(32)
     db.session.add(RefreshGrant(digest=digest(refresh), session_id=session.id, used=False))
-    access = jwt.encode(dict(sub=str(session.user_id), sid=session.id, iat=now,
-                             exp=now + 300, iss='wallettracker', aud='wallettracker-v2',
-                             token_use='access'), current_app.config['PRIVATE_KEY'], algorithm='RS256')
-    return dict(access_token=access, refresh_token=refresh, expires_in=300, user_id=str(session.user_id))
+    access = jwt.encode({'sub': str(session.user_id), 'sid': session.id, 'iat': now,
+                         'exp': now + 300, 'iss': 'wallettracker', 'aud': 'wallettracker-v2',
+                         'token_use': 'access'}, current_app.config['PRIVATE_KEY'], algorithm='RS256')
+    return {'access_token': access, 'refresh_token': refresh, 'expires_in': 300, 'user_id': str(session.user_id)}
 
 
 def authenticated(function):
@@ -64,14 +65,14 @@ def login():
     data = json_object()
     username, password = data.get('username'), data.get('password')
     if not isinstance(username, str) or not isinstance(password, str) or not 1 <= len(username) <= 128 or not 1 <= len(password) <= 1024:
-        return jsonify(error='Invalid credentials'), 401
+        return jsonify(error=INVALID_CREDENTIALS), 401
     user = UserRepository.get_by_username(username)
     # Do comparable password work for unknown users; never disclose account existence.
     if not user:
         hash_password(password)
-        return jsonify(error='Invalid credentials'), 401
+        return jsonify(error=INVALID_CREDENTIALS), 401
     if not UserRepository.check_password(user, password):
-        return jsonify(error='Invalid credentials'), 401
+        return jsonify(error=INVALID_CREDENTIALS), 401
     session = ApiSession(id=str(uuid.uuid4()), user_id=user.id, expires=int(time.time()) + 30 * 86400, revoked=False)
     db.session.add(session)
     db.session.flush()
