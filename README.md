@@ -1,5 +1,8 @@
 # WalletTracker Backend
 
+> **Dev API-v2 refactor:** [exposure audit, protocol, schema and remaining hardening](delivery/DEV-API-V2.md).
+> Production remains unchanged on v1; dev disables legacy v1 finance/auth writers.
+
 Flask API for personal finances, consumed by the WalletTracker Android app.
 Production remains at **https://api.downops.win** using API v1.
 

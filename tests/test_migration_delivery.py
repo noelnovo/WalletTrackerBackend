@@ -56,9 +56,9 @@ def test_real_tenant_alembic_upgrade_accepts_structured_url(keys, tmp_path, monk
     with app.app_context():
         upgrade(directory=migrate_all.TENANT_MIGRATIONS_DIR)
         assert set(inspect(db.engine).get_table_names()) == {
-            'Expense', 'ExpenseCategory', 'Importe', 'Season', 'alembic_version'
+            'Expense', 'ExpenseCategory', 'Importe', 'Season', 'SyncClock', 'SyncRecord', 'SyncReceipt', 'alembic_version'
         }
-        assert db.session.execute(text('SELECT version_num FROM alembic_version')).scalar() == 'c34bd55b3ea7'
+        assert db.session.execute(text('SELECT version_num FROM alembic_version')).scalar() == 'd2b100000001'
 
 
 def test_tenant_alembic_url_preserves_password_percent_characters(app, monkeypatch):

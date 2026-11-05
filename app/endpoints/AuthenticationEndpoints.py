@@ -82,7 +82,7 @@ def register():
     except HttpException as e:
         return make_response(None, False, e.message, e.inner_exception), e.status_code
     except Exception as e:
-        created_user.delete()
+        db.session.rollback()
         return make_response(None, False, Messages.INTERNAL_ERROR, e), 500
 
     

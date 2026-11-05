@@ -31,11 +31,8 @@ def make_response(data=None, success=True, message="", exception=None, debug=Fal
         else:
             if exception is not None:
 
-                stack_trace = traceback.format_exc()
-                exc_message = f"{str(exception)}"
-                log_message += f" [ INNER EXCEPTION ]: {exc_message}\n{stack_trace}"
-
-                AppLogger.error(log_message, stack_info=True, exc_info=True)
+                # Driver exceptions can embed SQL bind parameters (including secrets).
+                AppLogger.error("%s [%s]", log_message, type(exception).__name__)
             else:
                 AppLogger.error(log_message)
                 

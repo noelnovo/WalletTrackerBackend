@@ -13,6 +13,9 @@ from config import DATABASE_USERNAME, DATABASE_PASSWORD, DATABASE_HOST, DATABASE
 from utils.Cryptography import generate_keys_file
 from utils.Logger import AppLogger
 from runtime_identity import managed_mode, load_managed_identity
+from endpoints.V2Auth import v2auth
+from endpoints.V2Sync import v2sync
+from security import install_security
 
 def _include_object(object, name, type_, reflected, compare_to):
     if type_ == "table":
@@ -32,6 +35,9 @@ def create_app_test(test_config=None):
     app.register_blueprint(health_bp)
     app.register_blueprint(season_bp)
     app.register_blueprint(importe_bp)
+    app.register_blueprint(v2auth)
+    app.register_blueprint(v2sync)
+    install_security(app)
 
     return app
 
@@ -69,6 +75,9 @@ def create_app(database_uri=None):
     app.register_blueprint(health_bp)
     app.register_blueprint(season_bp)
     app.register_blueprint(importe_bp)
+    app.register_blueprint(v2auth)
+    app.register_blueprint(v2sync)
+    install_security(app)
 
     @app.after_request
     def build_revision(response):

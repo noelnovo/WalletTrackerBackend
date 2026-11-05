@@ -348,7 +348,10 @@
         "WALLET_TRACKER_PRIVATE_KEY_FILE": "/run/wallettracker-rsa/private_key.pem",
         "WALLET_TRACKER_PUBLIC_KEY_FILE": "/run/wallettracker-rsa/public_key.pem",
         "WALLET_TRACKER_STDOUT_LOG": "true",
-        "WALLET_TRACKER_REQUIRE_RESTORE_CHECKPOINT": "false"
+        "WALLET_TRACKER_REQUIRE_RESTORE_CHECKPOINT": "false",
+        "WALLET_TRACKER_TRUSTED_PROXIES": "10.2.0.10/32",
+        "WALLET_TRACKER_DEV_NETWORKS": "10.2.0.0/24,192.168.1.0/24",
+        "WALLET_TRACKER_V2_ONLY": "true"
       }
     },
     {

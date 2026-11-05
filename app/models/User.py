@@ -14,3 +14,7 @@ class User(db.Model, BaseModel):
     client_public_key = db.Column(db.Text, nullable=True)
     db_username = db.Column(db.String(255), nullable=True)
     db_password = db.Column(db.String(255), nullable=True)
+
+    def to_json_dict(self):
+        # Never serialize database credentials, password hashes, salts or private keys.
+        return {"id": self.id, "username": self.username}

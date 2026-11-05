@@ -17,6 +17,7 @@ def test_register_success(mock_create_tenant, client):
     assert data["message"] == UserMessages.CREATED
     assert "id" in data["data"]
     assert data["data"]["username"] == "newuser"
+    assert set(data["data"]) == {"id", "username"}
 
 
 def test_register_duplicate_username(client):
