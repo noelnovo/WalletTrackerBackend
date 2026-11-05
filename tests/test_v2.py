@@ -113,6 +113,7 @@ def test_private_dev_api_does_not_trust_external_forwarded_headers(app, client):
     assert client.get('/api/v2/sync', environ_base={'REMOTE_ADDR': '203.0.113.1'}, headers={'X-Forwarded-For': '10.2.0.13'}).status_code == 403
     assert client.get('/api/v2/sync', environ_base={'REMOTE_ADDR': '10.2.0.10'}, headers={'X-Forwarded-For': '203.0.113.1'}).status_code == 403
     assert client.get('/api/v2/sync', environ_base={'REMOTE_ADDR': '10.2.0.10'}, headers={'X-Forwarded-For': '10.2.0.13'}).status_code == 401
+    assert client.get('/api/v2/sync', environ_base={'REMOTE_ADDR': '10.2.0.100'}, headers={'X-Forwarded-For': '203.0.113.1'}).status_code == 403
 
 
 def test_invalid_json_shapes_are_rejected(v2):

@@ -37,6 +37,10 @@ def install_security(app):
         if not networks or not request.path.startswith('/api/') or request.path.rstrip('/').endswith(('/health', '/ready')):
             return None
         try:
+            peer = ipaddress.ip_address(request.remote_addr or '')
+            if request.headers.get('X-Forwarded-For') and not any(peer in ipaddress.ip_network(cidr) for cidr in app.config['TRUSTED_PROXY_NETWORKS']):
+                # Do not mistake an unexpected SNAT/proxy peer for a LAN client.
+                return jsonify(error='Untrusted development proxy'), 403
             address = ipaddress.ip_address(client_address())
             if any(address in ipaddress.ip_network(cidr) for cidr in networks):
                 return None
