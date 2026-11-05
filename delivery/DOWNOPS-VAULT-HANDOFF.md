@@ -1,9 +1,10 @@
 # DownOps handoff: dev-only Vault consolidation
 
-Owner approved **dev only + production plan**. The operations MCP attempt was
-blocked by `Insufficient Balance`; no staging receipt was returned. Repository
-runtime readers deliberately remain on their existing paths until staging is
-verified. Use `git show dev:<path>` when a clone's working tree is on `main`.
+Owner approved **dev only + production plan**. Phase1 backend/delivery staging
+and dev read grants are now verified; see `vault-dev-staging-receipt.json`.
+Dev source references are being rolled out through GitLab/Argo. Old sources and
+grants remain until rollout verification; Android JWT-role creation has a
+separate HTTP403 blocker. Use `git show dev:<path>` when a clone is on `main`.
 Owner subsequently specified the canonical layout as
 `downops/apps/wallettracker/{dev,prod}/...` plus shared `delivery/...`.
 
@@ -59,7 +60,8 @@ the dev CI Argo-token read, and the active contract through the `dev` branch and
 normal GitLab/Argo delivery, then provide successful pipeline/readiness/VSO proof.
 `bootstrap_vault.py` is now plan-only; `--apply` cannot create another root engine
 or credentials. `contract(canonical_dev=True)` renders the desired policy plan;
-the default contract describes the still-active readers.
+the default contract describes canonical dev readers and unchanged production
+readers. `contract(canonical_dev=False)` is retained for rollback planning only.
 
 ## Phase 2 — not authorized until rollout verification
 

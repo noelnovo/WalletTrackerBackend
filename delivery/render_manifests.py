@@ -24,12 +24,13 @@ def resources(env):
     result=[obj('ServiceAccount','wallettracker',ns,automountServiceAccountToken=False)]
     for role in ['identity','database','pull']:result+=auth(role,ns)
     result += [obj('Role','vso-token-request',ns,api='rbac.authorization.k8s.io/v1',rules=[{'apiGroups':[''],'resources':['serviceaccounts/token'],'resourceNames':['identity','database','pull'],'verbs':['create']}]),obj('RoleBinding','vso-token-request',ns,api='rbac.authorization.k8s.io/v1',roleRef={'apiGroup':'rbac.authorization.k8s.io','kind':'Role','name':'vso-token-request'},subjects=[{'kind':'ServiceAccount','name':CTRL,'namespace':'vault-secrets-operator'}])]
-    # Keep live source records until the operator's canonical-path staging receipt.
-    dbmount,dbpath=('downops','apps/wallettracker/runtime') if prod else ('wallettracker','dev/database')
-    imount,ipath=('downops','apps/wallettracker/') if prod else ('wallettracker','dev/')
+    # Dev staging is verified; production/global readers retain their current sources.
+    dbmount,dbpath=('downops','apps/wallettracker/runtime') if prod else ('downops','apps/wallettracker/dev/runtime')
+    imount,ipath=('downops','apps/wallettracker/') if prod else ('downops','apps/wallettracker/dev/')
     result += [vss('wallettracker-db',ns,'database',dbmount,dbpath,{'MARIADB_ROOT_PASSWORD':'{{ .Secrets.DATABASE_ROOT_PASSWORD }}'}),vss('wallettracker-signing',ns,'identity',imount,ipath+'signing',{'WALLET_TRACKER_SECRET':'{{ .Secrets.SIGN_SECRET_WORD }}'},restart=True),vss('wallettracker-rsa',ns,'identity',imount,ipath+'rsa',{'private_key.pem':'{{ .Secrets.PRIVATE_KEY_BASE64 | b64dec }}','public_key.pem':'{{ .Secrets.PUBLIC_KEY_BASE64 | b64dec }}'},restart=True)]
     pull='{{- $auth := printf "%s:%s" .Secrets.HARBOR_ROBOT_NAME .Secrets.HARBOR_ROBOT_SECRET | b64enc -}}{{- $entry := dict "username" .Secrets.HARBOR_ROBOT_NAME "password" .Secrets.HARBOR_ROBOT_SECRET "auth" $auth -}}{{- dict "auths" (dict "registry.int.downops.win" $entry) | toJson -}}'
-    result += [vss('harbor-pull',ns,'pull','wallettracker','delivery/harbor-pull',{'.dockerconfigjson':pull},'kubernetes.io/dockerconfigjson')]
+    pullmount,pullpath=('wallettracker','delivery/harbor-pull') if prod else ('downops','apps/wallettracker/delivery/harbor-pull')
+    result += [vss('harbor-pull',ns,'pull',pullmount,pullpath,{'.dockerconfigjson':pull},'kubernetes.io/dockerconfigjson')]
     result += [obj('ConfigMap','wallettracker-config',ns,data={'DATABASE_NAME':'wallet_tracker','WALLET_TRACKER_DB_HOST':'mariadb','WALLET_TRACKER_DB_USER':'root','ENABLE_REGISTER':'false' if prod else 'true','WALLET_TRACKER_REQUIRE_MANAGED_KEYS':'true','WALLET_TRACKER_PRIVATE_KEY_FILE':'/run/wallettracker-rsa/private_key.pem','WALLET_TRACKER_PUBLIC_KEY_FILE':'/run/wallettracker-rsa/public_key.pem','WALLET_TRACKER_STDOUT_LOG':'true','WALLET_TRACKER_REQUIRE_RESTORE_CHECKPOINT':'true' if prod else 'false'})]
     if not prod:
         result[-1]['data'].update(WALLET_TRACKER_TRUSTED_PROXIES='10.2.0.10/32', WALLET_TRACKER_V2_ONLY='true')

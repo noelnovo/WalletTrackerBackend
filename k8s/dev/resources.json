@@ -186,8 +186,8 @@
       },
       "spec": {
         "vaultAuthRef": "database",
-        "mount": "wallettracker",
-        "path": "dev/database",
+        "mount": "downops",
+        "path": "apps/wallettracker/dev/runtime",
         "type": "kv-v2",
         "refreshAfter": "60s",
         "hmacSecretData": true,
@@ -221,8 +221,8 @@
       },
       "spec": {
         "vaultAuthRef": "identity",
-        "mount": "wallettracker",
-        "path": "dev/signing",
+        "mount": "downops",
+        "path": "apps/wallettracker/dev/signing",
         "type": "kv-v2",
         "refreshAfter": "60s",
         "hmacSecretData": true,
@@ -262,8 +262,8 @@
       },
       "spec": {
         "vaultAuthRef": "identity",
-        "mount": "wallettracker",
-        "path": "dev/rsa",
+        "mount": "downops",
+        "path": "apps/wallettracker/dev/rsa",
         "type": "kv-v2",
         "refreshAfter": "60s",
         "hmacSecretData": true,
@@ -306,8 +306,8 @@
       },
       "spec": {
         "vaultAuthRef": "pull",
-        "mount": "wallettracker",
-        "path": "delivery/harbor-pull",
+        "mount": "downops",
+        "path": "apps/wallettracker/delivery/harbor-pull",
         "type": "kv-v2",
         "refreshAfter": "60s",
         "hmacSecretData": true,

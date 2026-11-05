@@ -9,20 +9,28 @@ class DeliveryContract(unittest.TestCase):
         self.assertNotIn('WALLET_TRACKER_DEV_NETWORKS',cfg)
         self.assertEqual(cfg['WALLET_TRACKER_TRUSTED_PROXIES'],'10.2.0.10/32')
         self.assertEqual(cfg['WALLET_TRACKER_V2_ONLY'],'true')
-    def test_live_vault_readers_wait_for_verified_staging(self):
+    def test_dev_vault_readers_use_verified_canonical_staging(self):
         items=resources('dev')
         actual={x['metadata']['name']:(x['spec']['mount'],x['spec']['path']) for x in items if x['kind']=='VaultStaticSecret'}
-        self.assertEqual(actual['wallettracker-db'],('wallettracker','dev/database'))
-        self.assertEqual(actual['wallettracker-rsa'],('wallettracker','dev/rsa'))
-        self.assertEqual(actual['wallettracker-signing'],('wallettracker','dev/signing'))
-        self.assertEqual(actual['harbor-pull'],('wallettracker','delivery/harbor-pull'))
-        c=contract(canonical_dev=True)
+        self.assertEqual(actual['wallettracker-db'],('downops','apps/wallettracker/dev/runtime'))
+        self.assertEqual(actual['wallettracker-rsa'],('downops','apps/wallettracker/dev/rsa'))
+        self.assertEqual(actual['wallettracker-signing'],('downops','apps/wallettracker/dev/signing'))
+        self.assertEqual(actual['harbor-pull'],('downops','apps/wallettracker/delivery/harbor-pull'))
+        c=contract()
         self.assertIsNone(c['new_kv_mount'])
         self.assertNotIn('wallettracker/data/dev/',c['policies']['wallettracker-dev-identity'])
         self.assertIn('downops/data/apps/wallettracker/delivery/argocd-dev',c['policies']['wallettracker-ci-dev'])
         self.assertIn('downops/data/apps/wallettracker/delivery/harbor-ci',c['policies']['wallettracker-ci-dev'])
         self.assertIn('downops/data/apps/wallettracker/delivery/harbor-pull',c['policies']['wallettracker-dev-pull'])
         self.assertNotIn('downops/data/apps/wallettracker/dev/delivery/',str(c['required_input_records']))
+        for role in ['wallettracker-dev-identity','wallettracker-dev-database','wallettracker-dev-pull','wallettracker-ci-dev']:
+            self.assertNotIn('"wallettracker/data/',c['policies'][role])
+    def test_dev_delivery_paths_do_not_change_production_sources(self):
+        from publish import DELIVERY_SECRET_PREFIXES,STATUS_SECRET_PATHS
+        self.assertEqual(DELIVERY_SECRET_PREFIXES['dev'],'downops/data/apps/wallettracker/delivery/')
+        self.assertEqual(STATUS_SECRET_PATHS['dev'],'downops/data/apps/wallettracker/delivery/argocd-dev')
+        self.assertEqual(DELIVERY_SECRET_PREFIXES['prod'],'wallettracker/data/delivery/')
+        self.assertEqual(STATUS_SECRET_PATHS['prod'],'wallettracker/data/delivery/argocd-prod')
     def test_legacy_bootstrap_cannot_create_root_engines_or_credentials(self):
         p=subprocess.run([sys.executable,str(ROOT/'delivery/bootstrap_vault.py'),'--apply','--credentials-file','/nonexistent'],capture_output=True,text=True)
         self.assertNotEqual(p.returncode,0)

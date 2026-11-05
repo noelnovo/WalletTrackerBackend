@@ -1,7 +1,7 @@
 """Desired scoped policies/roles. Pure data; never acquires administrative access."""
 def read_policy(paths):
     return '\n'.join('path "'+p+'" { capabilities=["read"] }' for p in paths)+'\npath "auth/token/lookup-self" { capabilities=["read"] }\npath "auth/token/renew-self" { capabilities=["update"] }\npath "auth/token/revoke-self" { capabilities=["update"] }\n'
-def contract(canonical_dev=False):
+def contract(canonical_dev=True):
     policies={};roles={}
     for env in ['dev','prod']:
         ns='wallettracker-'+env;prod=env=='prod'

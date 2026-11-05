@@ -1,10 +1,13 @@
 # WalletTracker Vault layout
 
-**Current follow-up:** owner specified `dev/`, `prod/`, and shared `delivery/`
-under this app prefix and approved dev-only consolidation plus a production
-plan. The operations MCP is blocked by `Insufficient Balance`; values, policies
-and cutover have not been independently verified. Active runtime readers are unchanged. The executable
-handoff is [DOWNOPS-VAULT-HANDOFF.md](DOWNOPS-VAULT-HANDOFF.md).
+**Current follow-up:** the operations MCP verified unchanged-value staging of
+all nine backend/delivery records and canonical reads by dev database, identity
+and pull identities. Dev consumer definitions now use the canonical sources;
+rollout verification is pending. Old sources/grants and production/global
+readers remain untouched. Android key staging is valid, but its CI JWT role
+creation is still blocked by HTTP403; CI signing stays disabled.
+Non-secret proof: [vault-dev-staging-receipt.json](vault-dev-staging-receipt.json).
+The handoff is [DOWNOPS-VAULT-HANDOFF.md](DOWNOPS-VAULT-HANDOFF.md).
 
 The canonical app namespace is **KV-v2 mount `downops`, prefix
 `apps/wallettracker`**. Do not introduce another top-level engine for new
@@ -18,14 +21,14 @@ WalletTracker secrets. Logical paths below omit Vault's API-only `/data/` segmen
 | `downops/apps/wallettracker/prod/signing` | Legacy backend API-v1 `SIGN_SECRET_WORD`; **not** an APK signing key |
 | `downops/apps/wallettracker/prod/rsa` | Production server identity/JWT RSA key pair |
 | `downops/apps/wallettracker/prod/runtime` | Production database/runtime credential |
-| `wallettracker/dev/database`, `wallettracker/dev/rsa`, `wallettracker/dev/signing` | Existing isolated dev identities introduced during the earlier Kubernetes cutover |
-| `downops/apps/wallettracker/delivery/*` | Canonical shared Harbor, repository/mirror and Argo delivery records; existing readers still use `wallettracker/delivery/*` pending cutover |
+| `downops/apps/wallettracker/dev/{runtime,rsa,signing}` | Verified unchanged-value dev records; old `wallettracker/dev/*` sources retained until rollout/cleanup proof |
+| `downops/apps/wallettracker/delivery/*` | Verified canonical shared delivery records; dev readers switch now, production/global readers retain their old sources until approved cutover |
 
-Similar names across dev/prod do not establish equal secret values. The previous
-cutover generated independent dev identities; this task has not read/exported
-all current values to claim a fresh equality audit. The split between mounts is
-an inherited layout inconsistency, not a reason to reuse production credentials
-in development or delete live records.
+Similar names across dev/prod do not establish equal secret values. Phase1
+privately verified equality of all nine migrated backend/delivery records; no
+secret values or hashes are exported. These are temporary migration copies,
+not an excuse to reuse production credentials in development or delete sources
+before their readers are migrated.
 
 ## Corrected Android development record
 
@@ -65,7 +68,7 @@ Production/shared consolidation is **not applied** by the present dev-only chang
 records are also referenced by production pull secrets and Argo repository
 credentials, whose manifests track protected `main`. Removing or moving those
 records now would break production and conflict with the owner's dev-only scope.
-The owner authorized DownOps to handle dev staging, but its failed attempt
-returned no verified Vault changes. The Android path correction itself does not
-write Vault values, policies or roles. A production-reader cutover needs its
+The owner authorized DownOps dev staging, which is now verified by the protected
+receipt. The Android record/read-only policy exists; its JWT-role blocker is
+separate. A production-reader cutover needs its
 own approved release, rather than a live patch that GitOps would undo.
