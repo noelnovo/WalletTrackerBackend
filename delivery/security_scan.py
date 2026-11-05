@@ -15,6 +15,9 @@ def main():
     cmd=['docker','run','--rm','--env','SONAR_TOKEN','--env','SONAR_HOST_URL','--volume',os.getcwd()+':/usr/src','sonarsource/sonar-scanner-cli:latest','-Dsonar.qualitygate.wait=true','-Dsonar.qualitygate.timeout=300']
     p=subprocess.run(cmd,capture_output=True,env=env)
     if p.returncode:
+        from security_diagnostics import report
+        try:report(sonar)
+        except Exception as error:print(json.dumps({'diagnostics_unavailable':type(error).__name__}))
         output=(p.stdout+p.stderr).decode(errors='replace').lower()
         # Emit fixed categories only: scanner output can include credentials.
         hints={name:needle in output for name,needle in {

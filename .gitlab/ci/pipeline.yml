@@ -31,6 +31,18 @@ delivery-tests:
     - python3 -m unittest discover -s delivery -p 'test_*.py' -v
     - python3 delivery/bootstrap_vault.py
 
+security-diagnostics:
+  stage: test
+  image: python:3.13-alpine
+  allow_failure: true
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: https://vault.int.downops.win
+  rules:
+    - if: '$VAULT_READY == "true" && $CI_COMMIT_BRANCH == "dev"'
+  script:
+    - python3 delivery/security_diagnostics.py
+
 application-tests:
   stage: test
   image: python:3.12-alpine
