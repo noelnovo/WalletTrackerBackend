@@ -1,0 +1,113 @@
+name: WalletTracker backend
+
+on:
+  push:
+    branches: [dev, main]
+    tags: ['v*']
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wallettracker-backend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  delivery-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python3 delivery/render_manifests.py --check
+      - run: python3 -m unittest discover -s delivery -p 'test_*.py'
+      - run: python3 delivery/bootstrap_vault.py
+
+  python-tests:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: mariadb:11.4.12
+        env:
+          MARIADB_ROOT_PASSWORD: ci-only-not-production
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mariadb-admin ping --silent"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      DATABASE_ROOT_PASSWORD: ci-only-not-production
+      DATABASE_NAME: wallettracker_ci
+      WALLET_TRACKER_SECRET: ci-only-signing-value
+      WALLET_TRACKER_DB_USER: root
+      WALLET_TRACKER_DB_HOST: 127.0.0.1
+      ENABLE_REGISTER: 'true'
+      WALLET_TRACKER_STDOUT_LOG: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libmariadb-dev libmariadb-dev-compat pkg-config
+      - run: pip install uv
+      - run: cd app && uv sync --frozen && uv lock --check
+      - run: PYTHONPATH="$PWD/app" app/.venv/bin/python delivery/real_migration_test.py
+      - run: PYTHONPATH="$PWD/app" app/.venv/bin/pytest tests --cov=app --cov-report=xml:coverage.xml -q
+      - run: app/.venv/bin/python -c "import xml.etree.ElementTree as E; p='coverage.xml'; t=E.parse(p); [setattr(x,'text','app') for x in t.findall('./sources/source')]; t.write(p)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage.xml
+
+  image-smoke:
+    needs: [delivery-tests, python-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: docker build --build-arg BUILD_REVISION="$GITHUB_SHA" -t wallettracker-ci app
+      - run: python3 delivery/image_smoke.py
+
+  sonarqube:
+    needs: [python-tests, image-smoke]
+    runs-on: ubuntu-latest
+    environment: security
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require trusted, configured security identity
+        run: |
+          test "$GITHUB_EVENT_NAME" != pull_request || { echo 'Untrusted PRs cannot obtain analysis credentials; trusted source review is required.'; exit 1; }
+          python3 -c 'import json; assert json.load(open("delivery/github-actions-status.json"))["security_ready"] is True, "GitHub scan role/network verification is not complete; security gate remains closed"'
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+      - uses: hashicorp/vault-action@v3
+        with:
+          url: https://vault.downops.win
+          method: jwt
+          path: github-actions
+          role: wallettracker-backend-ci-scan
+          jwtGithubAudience: https://vault.downops.win
+          exportToken: true
+          exportEnv: false
+          secrets: |
+            downops/data/services/sonarqube/clients/instance-001 * | SONAR_ ;
+            downops/data/services/dependency-track/clients/instance-001 * | DT_
+      - run: docker build -t wallettracker-ci app
+      - run: docker save wallettracker-ci -o wallettracker-ci.tar
+      - run: docker run --rm -v "$PWD:/workspace:ro" anchore/syft docker-archive:/workspace/wallettracker-ci.tar -o cyclonedx-json | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json" | .components |= map(select(.type == "library"))' > bom.json
+      - run: python3 delivery/security_scan.py
