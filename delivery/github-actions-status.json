@@ -1,0 +1,5 @@
+{
+  "security_ready": false,
+  "delivery_ready": false,
+  "reason": "Exact GitHub OIDC roles/network and GitHub GitOps writeback require verified cutover. Never report skipped analysis or delivery as passed."
+}

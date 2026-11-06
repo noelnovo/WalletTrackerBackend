@@ -1,4 +1,7 @@
-"""Publish immutable artifact, environment-only GitOps writeback, refresh, verify.
+"""Legacy GitLab delivery implementation; NOT an active GitHub workflow entry point.
+
+GitHub delivery/writeback cutover requires separate review; see GITHUB-MIGRATION.md.
+Publish immutable artifact, environment-only GitOps writeback, refresh, verify.
 
 No kubeconfig, imperative application sync, estate-admin token or secret argv.
 Git credential helpers return secrets only to native Git over its private pipe.

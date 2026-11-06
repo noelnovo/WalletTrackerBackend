@@ -1,7 +1,8 @@
 """Ephemeral CI runtime probe only; never reads production credentials or data."""
 import json,os,subprocess,time,urllib.request
 if os.environ.get('CI')!='true':raise SystemExit('CI-only image probe')
-if os.environ.get('DOCKER_HOST')!='tcp://docker:2375':raise SystemExit('Refusing non-disposable CI Docker endpoint')
+github_disposable=os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted' and os.environ.get('DOCKER_HOST','') in ['', 'unix:///var/run/docker.sock']
+if os.environ.get('DOCKER_HOST')!='tcp://docker:2375' and not github_disposable:raise SystemExit('Refusing non-disposable CI Docker endpoint')
 def run(args):
     p=subprocess.run(['docker',*args],capture_output=True)
     if p.returncode:

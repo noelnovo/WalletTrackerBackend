@@ -1,3 +1,4 @@
-# GitLab's default entry point; all pipeline logic lives alongside GitHub metadata.
-include:
-  - local: /.gitlab/ci/pipeline.yml
+# GitHub Actions is authoritative; GitLab is a passive repository backup.
+workflow:
+  rules:
+    - when: never

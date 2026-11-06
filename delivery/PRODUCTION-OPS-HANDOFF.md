@@ -1,5 +1,12 @@
 # Approved production release — scoped operations handoff
 
+**Current owner correction:** GitHub Actions owns workflows and APK publication;
+GitLab is passive backup only. See `GITHUB-MIGRATION.md` and the new
+`github-actions-vault-plan.json`. Earlier GitLab-role/publication paragraphs below
+are historical receipts, not instructions to activate GitLab or request an upload
+PAT. GitHub publication uses built-in job-scoped `GITHUB_TOKEN`. Current GitHub
+scan/delivery readiness remains fail-closed until authorized OIDC/network cutover.
+
 Owner authorized production promotion, reviewed `dev` to `main` merges, a signed
 WalletTracker GitHub release, a fresh one-off encrypted off-cluster MariaDB
 backup/restore verification, and a brief WalletTracker-only write-freeze/read-lock
