@@ -7,7 +7,7 @@
   "images": [
     {
       "name": "registry.int.downops.win/wallettracker/backend",
-      "newTag": "prepared-not-deployed"
+      "newTag": "1.0.1"
     }
   ]
 }
