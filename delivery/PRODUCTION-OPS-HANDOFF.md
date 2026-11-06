@@ -52,12 +52,14 @@ namespace downops, protected `v*` tag and900s batch restrictions. Signing identi
 may read only `downops/data/apps/wallettracker/prod/mobile`; publication identity
 may read only `downops/data/apps/wallettracker/delivery/github-release`.
 
-The selected route is authenticated GitHub REST by the server-side operator,
-outside CI. Keep the existing estate credential server-side; do not copy it into
-CI or expose values in chat. The distinct `GITHUB_RELEASE_TOKEN` remains absent
-from `downops/apps/wallettracker/delivery/github-release`; automated CI publication
-is NOT activated. Real protected-tag CI login and asset upload remain gates to
-test. Never claim a read-only MCP tool can upload release assets.
+Owner now requires all pipeline jobs, including publication, to run in GitLab;
+GitHub remains the mirror and release-download host, not a workflow runner.
+Keep the existing estate credential server-side; do not copy it into CI or expose
+values in chat. The distinct repository-only `GITHUB_RELEASE_TOKEN` remains absent
+from `downops/apps/wallettracker/delivery/github-release`. GitLab publication is
+gated off with `GITHUB_RELEASE_READY=false` until it is provisioned/verified.
+Real production release signing and asset upload remain gates to test; an explicit
+nonpublishing protected-tag signing check cannot authorize a production release.
 
 ## Recovery and cutover sequence
 
@@ -90,10 +92,11 @@ be created in production. Recheck sandbox lifetime/capacity before use.
    release/manual Argo sync and actual Ready/migration/data proof. Do not deploy
    a stale writer or restore an old snapshot after new writes without current-data
    transfer. Stop on any failed readiness/signature/migration/security gate.
-6. Android GitLab `prod-apk` builds/signs/verifies; the authorized server-side REST
-   operator independently checks source/tag, APK configuration/signature, live
-   API-v2 and checksums, uploads verified CI assets to a draft, verifies digests
-   and only then publishes to GitHub Releases. CI `publish-prod` stays disabled.
+6. Android GitLab `prod-apk` builds/signs/verifies; GitLab `publish-prod` uses its
+   distinct repository-scoped credential, checks source/tag, release purpose,
+   APK configuration/signature, live API-v2 and checksums, uploads verified CI
+   assets to a draft, verifies digests and only then publishes to GitHub Releases.
+   It remains gated off until its credential is verified. No GitHub Actions run.
    No unsigned/debug APK release; no installed-app uninstall or signer change.
 
 Return non-secret receipts at each boundary. No old production/shared-source

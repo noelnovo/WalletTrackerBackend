@@ -3,6 +3,9 @@ from vault_contract import contract
 from render_manifests import resources
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 class DeliveryContract(unittest.TestCase):
+    def test_github_is_a_mirror_not_a_pipeline_runner(self):
+        workflows=ROOT/'.github/workflows'
+        self.assertEqual(list(workflows.glob('*.yml'))+list(workflows.glob('*.yaml')),[])
     def test_network_access_is_owned_by_existing_firewall(self):
         items=resources('dev')
         cfg=next(x for x in items if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']
