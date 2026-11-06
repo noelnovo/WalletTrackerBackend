@@ -27,7 +27,7 @@ def client_address():
 def enforce_api_version():
     probe = request.path.rstrip('/').endswith(('/health', '/ready'))
     if os.environ.get('WALLET_TRACKER_V2_ONLY', 'false').lower() == 'true' and request.path.startswith('/api/v1/') and not probe:
-        return jsonify(error='Update the development client to API v2'), 410
+        return jsonify(error='Update WalletTracker to version 3 or newer'), 410
     return None
 
 

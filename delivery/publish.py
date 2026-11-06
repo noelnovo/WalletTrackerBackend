@@ -6,8 +6,8 @@ Git credential helpers return secrets only to native Git over its private pipe.
 import json,os,pathlib,re,subprocess,sys,tempfile,time
 from ci_access import Vault,request,raw_request
 IMAGE='registry.int.downops.win/wallettracker/backend';PUSH='registry.downops.win/wallettracker/backend'
-# Verified dev staging; production credentials remain on their approved current paths.
-DELIVERY_SECRET_PREFIXES={'dev':'downops/data/apps/wallettracker/delivery/','prod':'wallettracker/data/delivery/'}
+# Production use requires verified staging/read grants and the approved release.
+DELIVERY_SECRET_PREFIXES={'dev':'downops/data/apps/wallettracker/delivery/','prod':'downops/data/apps/wallettracker/delivery/'}
 STATUS_SECRET_PATHS={env:prefix+'argocd-'+env for env,prefix in DELIVERY_SECRET_PREFIXES.items()}
 def command(args,env=None,input=None):
     p=subprocess.run(args,input=input,capture_output=True,env=env)

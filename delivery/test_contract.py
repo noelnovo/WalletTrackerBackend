@@ -25,13 +25,14 @@ class DeliveryContract(unittest.TestCase):
         self.assertNotIn('downops/data/apps/wallettracker/dev/delivery/',str(c['required_input_records']))
         for role in ['wallettracker-dev-identity','wallettracker-dev-database','wallettracker-dev-pull','wallettracker-ci-dev']:
             self.assertNotIn('"wallettracker/data/',c['policies'][role])
-    def test_dev_delivery_paths_do_not_change_production_sources(self):
+    def test_approved_release_uses_canonical_delivery_sources(self):
         from publish import DELIVERY_SECRET_PREFIXES,STATUS_SECRET_PATHS
         self.assertEqual(DELIVERY_SECRET_PREFIXES['dev'],'downops/data/apps/wallettracker/delivery/')
         self.assertEqual(STATUS_SECRET_PATHS['dev'],'downops/data/apps/wallettracker/delivery/argocd-dev')
-        self.assertEqual(DELIVERY_SECRET_PREFIXES['prod'],'wallettracker/data/delivery/')
-        self.assertEqual(STATUS_SECRET_PATHS['prod'],'wallettracker/data/delivery/argocd-prod')
+        self.assertEqual(DELIVERY_SECRET_PREFIXES['prod'],'downops/data/apps/wallettracker/delivery/')
+        self.assertEqual(STATUS_SECRET_PATHS['prod'],'downops/data/apps/wallettracker/delivery/argocd-prod')
     def test_legacy_bootstrap_cannot_create_root_engines_or_credentials(self):
+        # Bootstrap remains read-only even when desired contracts gain new readers.
         p=subprocess.run([sys.executable,str(ROOT/'delivery/bootstrap_vault.py'),'--apply','--credentials-file','/nonexistent'],capture_output=True,text=True)
         self.assertNotEqual(p.returncode,0)
         self.assertIn('writes are retired',p.stdout)
@@ -41,6 +42,20 @@ class DeliveryContract(unittest.TestCase):
         self.assertFalse(any(state['backup_enabled'].values()))
         for env in ['dev','prod']:
             self.assertFalse(any(r['metadata']['name'] in ['wallettracker-backups','wallettracker-backup'] for r in resources(env)))
+    def test_shared_repository_reader_is_gitops_managed_and_grants_stay_additive(self):
+        generated=json.loads((ROOT/'k8s/credentials/resources.json').read_text())['items']
+        reader=next(x for x in generated if x['kind']=='VaultStaticSecret')
+        self.assertEqual((reader['spec']['mount'],reader['spec']['path']),('downops','apps/wallettracker/delivery/gitops-read'))
+        policies=contract()['policies']
+        retained={
+            'wallettracker-prod-database':['downops/data/apps/wallettracker/runtime'],
+            'wallettracker-prod-identity':['downops/data/apps/wallettracker/rsa','downops/data/apps/wallettracker/signing'],
+            'wallettracker-prod-pull':['wallettracker/data/delivery/harbor-pull'],
+            'wallettracker-ci-prod':['wallettracker/data/delivery/harbor-ci','wallettracker/data/delivery/github-mirror','wallettracker/data/delivery/argocd-prod'],
+            'wallettracker-repository':['wallettracker/data/delivery/gitops-read','downops/data/apps/wallettracker/delivery/gitops-read'],
+        }
+        for policy,paths in retained.items():
+            for path in paths:self.assertIn('path "'+path+'"',policies[policy])
     def test_no_recovery_and_no_early_jenkins_removal(self):
         plan=json.loads((ROOT/'delivery/migration-plan.json').read_text());self.assertIn('authorization_update',plan);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
     def test_database_exact_version_and_persistence(self):
@@ -61,7 +76,12 @@ class DeliveryContract(unittest.TestCase):
                 if x['kind']=='VaultStaticSecret':
                     t=x['spec']['destination']['transformation'];self.assertTrue(t['excludeRaw']);self.assertEqual(t['excludes'],['.*']);self.assertTrue(t['templates'])
     def test_production_canonical_identity_not_copied(self):
-        items=[x for x in resources('prod') if x['kind']=='VaultStaticSecret'];self.assertEqual({x['spec']['path'] for x in items},{'apps/wallettracker/runtime','apps/wallettracker/rsa','apps/wallettracker/signing','delivery/harbor-pull'})
+        items=[x for x in resources('prod') if x['kind']=='VaultStaticSecret'];self.assertEqual({x['spec']['path'] for x in items},{'apps/wallettracker/prod/runtime','apps/wallettracker/prod/rsa','apps/wallettracker/prod/signing','apps/wallettracker/delivery/harbor-pull'})
+        self.assertTrue(all(x['spec']['mount']=='downops' for x in items))
+        config=next(x for x in resources('prod') if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']
+        self.assertEqual(config['ENABLE_REGISTER'],'false')
+        self.assertEqual(config['WALLET_TRACKER_V2_ONLY'],'true')
+        self.assertEqual(config['WALLET_TRACKER_REQUIRED_UPGRADE_CHECKPOINT'],'wallettracker-api-v2')
     def test_vault_roles_exact_namespace_no_linux_password_grants(self):
         c=contract()
         for name,role in c['roles'].items():
