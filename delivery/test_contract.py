@@ -9,6 +9,8 @@ class DeliveryContract(unittest.TestCase):
         self.assertIn('  sonarqube:',workflow)
         self.assertIn('when: never',(ROOT/'.gitlab-ci.yml').read_text())
         self.assertNotIn('include:',(ROOT/'.gitlab-ci.yml').read_text())
+        self.assertIn('--health-cmd "mariadb-admin ping --silent"',workflow)
+        self.assertNotIn("--health-cmd='",workflow)
     def test_network_access_is_owned_by_existing_firewall(self):
         items=resources('dev')
         cfg=next(x for x in items if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']

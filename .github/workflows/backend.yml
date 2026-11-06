@@ -38,7 +38,7 @@ jobs:
           MARIADB_ROOT_PASSWORD: ci-only-not-production
         ports: ['3306:3306']
         options: >-
-          --health-cmd='mariadb-admin ping --silent'
+          --health-cmd "mariadb-admin ping --silent"
           --health-interval=5s --health-timeout=5s --health-retries=30
     env:
       DATABASE_ROOT_PASSWORD: ci-only-not-production
