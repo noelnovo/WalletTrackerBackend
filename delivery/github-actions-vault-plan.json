@@ -6,13 +6,14 @@
   "repository": "noelnovo/WalletTrackerBackend",
   "repository_id": "910129138",
   "repository_owner_id": "128699907",
+  "verified_immutable_subject_prefix": "repo:noelnovo@128699907/WalletTrackerBackend@910129138",
   "workflow": "noelnovo/WalletTrackerBackend/.github/workflows/backend.yml",
   "roles": {
     "wallettracker-backend-ci-scan": {
       "role_type": "jwt",
       "user_claim": "sub",
       "bound_audiences": ["https://vault.downops.win"],
-      "bound_subject": "repo:noelnovo/WalletTrackerBackend:environment:security",
+      "bound_subject": "repo:noelnovo@128699907/WalletTrackerBackend@910129138:environment:security",
       "bound_claims_type": "glob",
       "bound_claims": {
         "repository_id": "910129138",
