@@ -227,19 +227,18 @@ def decode_jwt_ignore_expiry(token):
         raise HttpException(TokenMessages.INVALID, 401)
 
 def hash_password(password: str, salt: str = None) -> tuple[str, str]:
-    if salt is not None:
-        salt_bytes = binascii.unhexlify(salt)
-    else:
-        salt_bytes = os.urandom(32)
+    if salt is None:
+        salt = "v2:" + os.urandom(16).hex()
+    modern = salt.startswith("v2:")
+    salt_bytes = binascii.unhexlify(salt[3:] if modern else salt)
 
     hashed_bytes = hashlib.pbkdf2_hmac(
         "sha256",
         password.encode("utf-8"),
         salt_bytes,
-        100000
+        600000 if modern else 100000
     )
 
     hashed_password = binascii.hexlify(hashed_bytes).decode("utf-8")
-    salt_hex = binascii.hexlify(salt_bytes).decode("utf-8")
+    salt_hex = salt
     return hashed_password, salt_hex
-    

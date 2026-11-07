@@ -1,14 +1,15 @@
 import secrets
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from flask_migrate import upgrade as migrate_upgrade
-from sqlalchemy import create_engine, text
+from sqlalchemy import URL, create_engine, text
 from sqlalchemy.orm import scoped_session, sessionmaker
 from db import db
 from config import DATABASE_HOST, DATABASE_NAME
 from exceptions.Http import HttpException
 from utils.Constants import MultitenantMessages
-_engine_cache = {}
+_engine_cache = OrderedDict()
 _lock = threading.Lock()
 
 
@@ -16,9 +17,9 @@ def construct_db_name(base: str, user_id: int) -> str:
     return f"{base}_u{user_id}"
 
 
-def construct_db_connection_string(db_username: str, db_password: str, user_id: int) -> str:
+def construct_db_connection_string(db_username: str, db_password: str, user_id: int):
     user_dbname = construct_db_name(DATABASE_NAME, user_id)
-    return f"mysql://{db_username}:{db_password}@{DATABASE_HOST}/{user_dbname}"
+    return URL.create('mysql', username=db_username, password=db_password, host=DATABASE_HOST, database=user_dbname)
 
 
 def create_tenant_user_and_db(user) -> tuple[str, str]:
@@ -26,7 +27,7 @@ def create_tenant_user_and_db(user) -> tuple[str, str]:
         admin_engine = db.engine
         user_dbname = construct_db_name(DATABASE_NAME, user.id)
         db_username = f"u{user.id}"
-        db_password = secrets.token_urlsafe(16)
+        db_password = secrets.token_urlsafe(32)
 
         with admin_engine.connect() as conn:
             conn.execute(
@@ -72,10 +73,14 @@ def initialise_tenant_db(user):
     try:
         with _lock:
             if user.id in _engine_cache:
+                _engine_cache.move_to_end(user.id)
                 return _engine_cache[user.id]
 
             uri = construct_db_connection_string(user.db_username, user.db_password, user.id)
-            eng = create_engine(uri, pool_pre_ping=True, pool_recycle=3600)
+            eng = create_engine(uri, pool_pre_ping=True, pool_recycle=300, pool_size=1, max_overflow=0, pool_timeout=10)
+            if len(_engine_cache) >= 8:
+                _, oldest = _engine_cache.popitem(last=False)
+                oldest.dispose()
             _engine_cache[user.id] = eng
 
             return eng

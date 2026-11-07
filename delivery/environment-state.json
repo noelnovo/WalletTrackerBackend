@@ -3,5 +3,18 @@
   "production_api_enabled": true,
   "backup_enabled": {"dev": false, "prod": false},
   "kubernetes_backup_policy": "vault-only",
-  "operator_rule": "Change these only through reviewed release source after the protected restore/key/account/row proofs and required backup checks pass. CI must never change this file."
+  "operator_rule": "Operator-reviewed release source only. Owner explicitly selected the existing MariaDB volume and schema upgrades without backups, restores or data reset. CI must never create its own approval. production_restore_verified is historical cutover evidence, not proof of a new API-v2 restore.",
+  "production_schema_upgrade": {
+    "approval_id": "wallettracker-api-v2-schema-only",
+    "approved_by": "owner",
+    "schema_upgrade_authorized": true,
+    "source_revision": "3cb6370ec414ed7c87920ba0cfe134994934c474",
+    "database_name": "wallet_tracker",
+    "namespace": "wallettracker-prod",
+    "target_main_head": "d2a100000001",
+    "target_tenant_head": "d2b100000001",
+    "backup_requested": false,
+    "restore_requested": false,
+    "data_reset": false
+  }
 }

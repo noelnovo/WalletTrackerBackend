@@ -1,4 +1,4 @@
-import os, hashlib, binascii
+import os, hashlib, binascii, hmac
 from db import db
 from models.User import User
 from utils.Cryptography import hash_password
@@ -29,4 +29,8 @@ class UserRepository:
     @staticmethod
     def check_password(user: User, password: str) -> bool:
         hex_hashed_password, hex_salt = hash_password(password, user.salt)
-        return user.password == hex_hashed_password
+        valid = hmac.compare_digest(user.password, hex_hashed_password)
+        if valid and not user.salt.startswith("v2:"):
+            user.password, user.salt = hash_password(password)
+            db.session.commit()
+        return valid

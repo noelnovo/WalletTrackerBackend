@@ -1,4 +1,4 @@
-"""Fail closed before production schema changes unless an operator marked restore."""
+"""Require the reviewed production upgrade policy before applying schema changes."""
 import os,sys,time
 sys.path.insert(0,'/app')
 # Newly created Pods can briefly precede NetworkPolicy/dataplane convergence.
@@ -6,6 +6,7 @@ sys.path.insert(0,'/app')
 from sqlalchemy import create_engine,text
 from sqlalchemy.exc import OperationalError
 from migrate_all import database_url
+sys.path.insert(0,'/migration')
 probe=create_engine(database_url('mysql'),connect_args={'connect_timeout':5})
 try:
     for attempt in range(30):
@@ -28,5 +29,12 @@ if os.environ.get('WALLET_TRACKER_REQUIRE_RESTORE_CHECKPOINT','false').lower()==
     except Exception:
         raise SystemExit('Approved production restore checkpoint absent; migration refused') from None
     finally:engine.dispose()
+if os.environ.get('WALLET_TRACKER_REQUIRED_UPGRADE_CHECKPOINT'):
+    from upgrade_checkpoint import require_upgrade_checkpoint
+    from migrate_all import get_engine,get_tenant_databases,DATABASE_NAME
+    try:
+        require_upgrade_checkpoint(get_engine,DATABASE_NAME,get_tenant_databases)
+    except Exception:
+        raise SystemExit('Reviewed schema-only approval or legacy recovery checkpoint required before API-v2 production migration') from None
 from migrate_all import main
 main()

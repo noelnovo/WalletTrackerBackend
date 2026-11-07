@@ -3,12 +3,74 @@ from vault_contract import contract
 from render_manifests import resources
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 class DeliveryContract(unittest.TestCase):
+    def test_ready_scan_body_matches_reviewed_plan(self):
+        plan=json.loads((ROOT/'delivery/github-actions-vault-plan.json').read_text())
+        body=json.loads((ROOT/'delivery/github-actions/role-scan.json').read_text())
+        self.assertEqual(body,plan['roles']['wallettracker-backend-ci-scan'])
+    def test_github_is_authoritative_and_gitlab_passive(self):
+        workflow=(ROOT/'.github/workflows/backend.yml').read_text()
+        self.assertIn('  python-tests:',workflow)
+        self.assertIn('  sonarqube:',workflow)
+        self.assertIn('when: never',(ROOT/'.gitlab-ci.yml').read_text())
+        self.assertNotIn('include:',(ROOT/'.gitlab-ci.yml').read_text())
+        self.assertIn('--health-cmd "mariadb-admin ping --silent"',workflow)
+        self.assertNotIn("--health-cmd='",workflow)
+        self.assertIn('role: wallettracker-backend-ci-scan',workflow)
+        self.assertIn('python3 delivery/security_scan.py',workflow)
+        self.assertNotIn('assert json.load(open("delivery/github-actions-status.json"))',workflow)
+    def test_network_access_is_owned_by_existing_firewall(self):
+        items=resources('dev')
+        cfg=next(x for x in items if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']
+        self.assertNotIn('WALLET_TRACKER_DEV_NETWORKS',cfg)
+        self.assertEqual(cfg['WALLET_TRACKER_TRUSTED_PROXIES'],'10.2.0.10/32')
+        self.assertEqual(cfg['WALLET_TRACKER_V2_ONLY'],'true')
+    def test_dev_vault_readers_use_verified_canonical_staging(self):
+        items=resources('dev')
+        actual={x['metadata']['name']:(x['spec']['mount'],x['spec']['path']) for x in items if x['kind']=='VaultStaticSecret'}
+        self.assertEqual(actual['wallettracker-db'],('downops','apps/wallettracker/dev/runtime'))
+        self.assertEqual(actual['wallettracker-rsa'],('downops','apps/wallettracker/dev/rsa'))
+        self.assertEqual(actual['wallettracker-signing'],('downops','apps/wallettracker/dev/signing'))
+        self.assertEqual(actual['harbor-pull'],('downops','apps/wallettracker/delivery/harbor-pull'))
+        c=contract()
+        self.assertIsNone(c['new_kv_mount'])
+        self.assertNotIn('wallettracker/data/dev/',c['policies']['wallettracker-dev-identity'])
+        self.assertIn('downops/data/apps/wallettracker/delivery/argocd-dev',c['policies']['wallettracker-ci-dev'])
+        self.assertIn('downops/data/apps/wallettracker/delivery/harbor-ci',c['policies']['wallettracker-ci-dev'])
+        self.assertIn('downops/data/apps/wallettracker/delivery/harbor-pull',c['policies']['wallettracker-dev-pull'])
+        self.assertNotIn('downops/data/apps/wallettracker/dev/delivery/',str(c['required_input_records']))
+        for role in ['wallettracker-dev-identity','wallettracker-dev-database','wallettracker-dev-pull','wallettracker-ci-dev']:
+            self.assertNotIn('"wallettracker/data/',c['policies'][role])
+    def test_approved_release_uses_canonical_delivery_sources(self):
+        from publish import DELIVERY_SECRET_PREFIXES,STATUS_SECRET_PATHS
+        self.assertEqual(DELIVERY_SECRET_PREFIXES['dev'],'downops/data/apps/wallettracker/delivery/')
+        self.assertEqual(STATUS_SECRET_PATHS['dev'],'downops/data/apps/wallettracker/delivery/argocd-dev')
+        self.assertEqual(DELIVERY_SECRET_PREFIXES['prod'],'downops/data/apps/wallettracker/delivery/')
+        self.assertEqual(STATUS_SECRET_PATHS['prod'],'downops/data/apps/wallettracker/delivery/argocd-prod')
+    def test_legacy_bootstrap_cannot_create_root_engines_or_credentials(self):
+        # Bootstrap remains read-only even when desired contracts gain new readers.
+        p=subprocess.run([sys.executable,str(ROOT/'delivery/bootstrap_vault.py'),'--apply','--credentials-file','/nonexistent'],capture_output=True,text=True)
+        self.assertNotEqual(p.returncode,0)
+        self.assertIn('writes are retired',p.stdout)
     def test_owner_vault_only_backup_policy(self):
         state=json.loads((ROOT/'delivery/environment-state.json').read_text())
         self.assertEqual(state['kubernetes_backup_policy'],'vault-only')
         self.assertFalse(any(state['backup_enabled'].values()))
         for env in ['dev','prod']:
             self.assertFalse(any(r['metadata']['name'] in ['wallettracker-backups','wallettracker-backup'] for r in resources(env)))
+    def test_shared_repository_reader_is_gitops_managed_and_grants_stay_additive(self):
+        generated=json.loads((ROOT/'k8s/credentials/resources.json').read_text())['items']
+        reader=next(x for x in generated if x['kind']=='VaultStaticSecret')
+        self.assertEqual((reader['spec']['mount'],reader['spec']['path']),('downops','apps/wallettracker/delivery/gitops-read'))
+        policies=contract()['policies']
+        retained={
+            'wallettracker-prod-database':['downops/data/apps/wallettracker/runtime'],
+            'wallettracker-prod-identity':['downops/data/apps/wallettracker/rsa','downops/data/apps/wallettracker/signing'],
+            'wallettracker-prod-pull':['wallettracker/data/delivery/harbor-pull'],
+            'wallettracker-ci-prod':['wallettracker/data/delivery/harbor-ci','wallettracker/data/delivery/github-mirror','wallettracker/data/delivery/argocd-prod'],
+            'wallettracker-repository':['wallettracker/data/delivery/gitops-read','downops/data/apps/wallettracker/delivery/gitops-read'],
+        }
+        for policy,paths in retained.items():
+            for path in paths:self.assertIn('path "'+path+'"',policies[policy])
     def test_no_recovery_and_no_early_jenkins_removal(self):
         plan=json.loads((ROOT/'delivery/migration-plan.json').read_text());self.assertIn('authorization_update',plan);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
     def test_database_exact_version_and_persistence(self):
@@ -29,7 +91,12 @@ class DeliveryContract(unittest.TestCase):
                 if x['kind']=='VaultStaticSecret':
                     t=x['spec']['destination']['transformation'];self.assertTrue(t['excludeRaw']);self.assertEqual(t['excludes'],['.*']);self.assertTrue(t['templates'])
     def test_production_canonical_identity_not_copied(self):
-        items=[x for x in resources('prod') if x['kind']=='VaultStaticSecret'];self.assertEqual({x['spec']['path'] for x in items},{'apps/wallettracker/runtime','apps/wallettracker/rsa','apps/wallettracker/signing','delivery/harbor-pull'})
+        items=[x for x in resources('prod') if x['kind']=='VaultStaticSecret'];self.assertEqual({x['spec']['path'] for x in items},{'apps/wallettracker/prod/runtime','apps/wallettracker/prod/rsa','apps/wallettracker/prod/signing','apps/wallettracker/delivery/harbor-pull'})
+        self.assertTrue(all(x['spec']['mount']=='downops' for x in items))
+        config=next(x for x in resources('prod') if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']
+        self.assertEqual(config['ENABLE_REGISTER'],'false')
+        self.assertEqual(config['WALLET_TRACKER_V2_ONLY'],'true')
+        self.assertEqual(config['WALLET_TRACKER_REQUIRED_UPGRADE_CHECKPOINT'],'wallettracker-api-v2')
     def test_vault_roles_exact_namespace_no_linux_password_grants(self):
         c=contract()
         for name,role in c['roles'].items():

@@ -1,0 +1,45 @@
+{
+  "status": "administrator review required; no recovery, operator self-grant or old-role deletion",
+  "auth_mount": "github-actions",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "audience": "https://vault.downops.win",
+  "repository": "noelnovo/WalletTrackerBackend",
+  "repository_id": "910129138",
+  "repository_owner_id": "128699907",
+  "verified_immutable_subject_prefix": "repo:noelnovo@128699907/WalletTrackerBackend@910129138",
+  "workflow": "noelnovo/WalletTrackerBackend/.github/workflows/backend.yml",
+  "roles": {
+    "wallettracker-backend-ci-scan": {
+      "role_type": "jwt",
+      "user_claim": "sub",
+      "bound_audiences": ["https://vault.downops.win"],
+      "bound_subject": "repo:noelnovo@128699907/WalletTrackerBackend@910129138:environment:security",
+      "bound_claims_type": "glob",
+      "bound_claims": {
+        "repository_id": "910129138",
+        "repository_owner_id": "128699907",
+        "repository": "noelnovo/WalletTrackerBackend",
+        "environment": "security",
+        "ref": ["refs/heads/dev", "refs/heads/main", "refs/tags/v*"],
+        "workflow_ref": [
+          "noelnovo/WalletTrackerBackend/.github/workflows/backend.yml@refs/heads/dev",
+          "noelnovo/WalletTrackerBackend/.github/workflows/backend.yml@refs/heads/main",
+          "noelnovo/WalletTrackerBackend/.github/workflows/backend.yml@refs/tags/v*"
+        ],
+        "event_name": ["push", "workflow_dispatch"]
+      },
+      "token_policies": ["wallettracker-ci-scan"],
+      "token_no_default_policy": true,
+      "token_type": "batch",
+      "token_ttl": 900,
+      "token_max_ttl": 900
+    }
+  },
+  "verify_existing_scan_policy_reads_only": [
+    "downops/data/services/sonarqube/clients/instance-001",
+    "downops/data/services/dependency-track/clients/instance-001"
+  ],
+  "activation": "Verify exact role/trust, security environment ref restrictions and hosted-runner endpoint access before reviewed source changes set security_ready=true. Preserve real DT/Sonar gates, no skip-as-pass or untrusted-PR secret access.",
+  "backend_delivery_not_yet_activated": "GitHub GitOps writeback, public Argo source/allowlists and scoped delivery identities remain a coordinated cutover; keep delivery_ready=false and preserve production manual-sync/recovery gates. Do not execute legacy GitLab publish.py from GitHub.",
+  "backup": "GitLab CI disabled; existing server operator makes explicit fast-forward backups from public GitHub without exporting credentials. No force, ref deletion or --mirror. Native pull mirroring is unavailable on GitLab CE."
+}

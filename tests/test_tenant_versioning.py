@@ -8,7 +8,7 @@ def test_new_tenant_runs_real_versioned_migrations():
     tenant_app = MagicMock()
     with patch('app.create_app', return_value=tenant_app) as create, patch('utils.Multitenant.migrate_upgrade') as upgrade:
         migrate_new_tenant(user)
-    assert create.call_args.kwargs['database_uri'].endswith('_u77')
+    assert create.call_args.kwargs['database_uri'].database.endswith('_u77')
     assert upgrade.call_args.kwargs['directory'].endswith('/migrations_tenant')
     tenant_app.app_context.assert_called_once()
 

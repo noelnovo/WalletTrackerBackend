@@ -17,8 +17,10 @@ def request(url,method='GET',data=None,headers=None):
     raw,_=raw_request(url,method,data,headers);return json.loads(raw) if raw else {}
 class Vault:
     def __init__(self,role):
-        jwt=os.environ.get('VAULT_ID_TOKEN')
-        if not jwt:raise RuntimeError('Job identity missing; operator Vault bootstrap is required')
-        result=request('https://vault.int.downops.win/v1/auth/gitlab-ci/login','POST',{'role':role,'jwt':jwt});self.token=result['auth']['client_token']
+        expected={'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY':'noelnovo/WalletTrackerBackend','GITHUB_REPOSITORY_ID':'910129138','GITHUB_REPOSITORY_OWNER_ID':'128699907'}
+        if any(os.environ.get(k)!=v for k,v in expected.items()):raise RuntimeError('Verified GitHub backend job identity required; GitLab CI is retired')
+        if role not in ['wallettracker-ci-scan','wallettracker-ci-dev','wallettracker-ci-prod']:raise RuntimeError('Unknown scoped delivery role')
+        self.token=os.environ.get('VAULT_TOKEN')
+        if not self.token:raise RuntimeError('The scoped GitHub OIDC Vault action must authenticate first')
     def read(self,path):
-        return request('https://vault.int.downops.win/v1/'+path,headers={'X-Vault-Token':self.token})['data']['data']
+        return request('https://vault.downops.win/v1/'+path,headers={'X-Vault-Token':self.token})['data']['data']
