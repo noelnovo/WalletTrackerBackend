@@ -1,0 +1,35 @@
+{
+  "apiVersion": "secrets.hashicorp.com/v1beta1",
+  "kind": "VaultStaticSecret",
+  "metadata": {
+    "annotations": {
+      "argocd.argoproj.io/sync-wave": "-10"
+    },
+    "name": "registry-pull-downops",
+    "namespace": "wallettracker-dev"
+  },
+  "spec": {
+    "destination": {
+      "create": true,
+      "name": "harbor-pull-downops",
+      "transformation": {
+        "excludeRaw": true,
+        "excludes": [
+          ".*"
+        ],
+        "templates": {
+          ".dockerconfigjson": {
+            "text": "{{- $auth := printf \"%s:%s\" .Secrets.HARBOR_ROBOT_NAME .Secrets.HARBOR_ROBOT_SECRET | b64enc -}}{{ dict \"auths\" (dict \"registry.int.downops.win\" (dict \"username\" .Secrets.HARBOR_ROBOT_NAME \"password\" .Secrets.HARBOR_ROBOT_SECRET \"auth\" $auth) \"registry.downops.win\" (dict \"username\" .Secrets.HARBOR_ROBOT_NAME \"password\" .Secrets.HARBOR_ROBOT_SECRET \"auth\" $auth)) | toJson }}"
+          }
+        }
+      },
+      "type": "kubernetes.io/dockerconfigjson"
+    },
+    "hmacSecretData": true,
+    "mount": "downops",
+    "path": "services/harbor/pull/instance-004",
+    "refreshAfter": "30s",
+    "type": "kv-v2",
+    "vaultAuthRef": "pull"
+  }
+}
