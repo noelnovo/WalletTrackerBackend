@@ -28,9 +28,10 @@ def resources(env):
     dbmount,dbpath=('downops','apps/wallettracker/prod/runtime') if prod else ('downops','apps/wallettracker/dev/runtime')
     imount,ipath=('downops','apps/wallettracker/prod/') if prod else ('downops','apps/wallettracker/dev/')
     result += [vss('wallettracker-db',ns,'database',dbmount,dbpath,{'MARIADB_ROOT_PASSWORD':'{{ .Secrets.DATABASE_ROOT_PASSWORD }}'}),vss('wallettracker-signing',ns,'identity',imount,ipath+'signing',{'WALLET_TRACKER_SECRET':'{{ .Secrets.SIGN_SECRET_WORD }}'},restart=True),vss('wallettracker-rsa',ns,'identity',imount,ipath+'rsa',{'private_key.pem':'{{ .Secrets.PRIVATE_KEY_BASE64 | b64dec }}','public_key.pem':'{{ .Secrets.PUBLIC_KEY_BASE64 | b64dec }}'},restart=True)]
-    pull='{{- $auth := printf "%s:%s" .Secrets.HARBOR_ROBOT_NAME .Secrets.HARBOR_ROBOT_SECRET | b64enc -}}{{- $entry := dict "username" .Secrets.HARBOR_ROBOT_NAME "password" .Secrets.HARBOR_ROBOT_SECRET "auth" $auth -}}{{- dict "auths" (dict "registry.int.downops.win" $entry) | toJson -}}'
-    pullmount,pullpath='downops','apps/wallettracker/delivery/harbor-pull'
-    result += [vss('harbor-pull',ns,'pull',pullmount,pullpath,{'.dockerconfigjson':pull},'kubernetes.io/dockerconfigjson')]
+    pull='{{- $auth := printf "%s:%s" .Secrets.HARBOR_ROBOT_NAME .Secrets.HARBOR_ROBOT_SECRET | b64enc -}}{{- $entry := dict "username" .Secrets.HARBOR_ROBOT_NAME "password" .Secrets.HARBOR_ROBOT_SECRET "auth" $auth -}}{{- dict "auths" (dict "registry.int.downops.win" $entry "registry.downops.win" $entry) | toJson -}}'
+    pullmount,pullpath='downops','services/harbor/pull/instance-004'
+    pullsecret=vss('registry-pull-downops',ns,'pull',pullmount,pullpath,{'.dockerconfigjson':pull},'kubernetes.io/dockerconfigjson')
+    pullsecret['spec']['destination']['name']='harbor-pull-downops';result += [pullsecret]
     result += [obj('ConfigMap','wallettracker-config',ns,data={'DATABASE_NAME':'wallet_tracker','WALLET_TRACKER_DB_HOST':'mariadb','WALLET_TRACKER_DB_USER':'root','ENABLE_REGISTER':'false' if prod else 'true','WALLET_TRACKER_REQUIRE_MANAGED_KEYS':'true','WALLET_TRACKER_PRIVATE_KEY_FILE':'/run/wallettracker-rsa/private_key.pem','WALLET_TRACKER_PUBLIC_KEY_FILE':'/run/wallettracker-rsa/public_key.pem','WALLET_TRACKER_STDOUT_LOG':'true','WALLET_TRACKER_REQUIRE_RESTORE_CHECKPOINT':'true' if prod else 'false'})]
     if not prod:
         result[-1]['data'].update(WALLET_TRACKER_TRUSTED_PROXIES='10.2.0.10/32', WALLET_TRACKER_V2_ONLY='true')
@@ -87,7 +88,7 @@ def render(check=False):
             if not p.exists() or p.read_text()!=data:changed.append(str(p.relative_to(ROOT)))
         else:p.write_text(data)
         k=folder/'kustomization.yaml'
-        if not k.exists() and not check:k.write_text(json.dumps({'apiVersion':'kustomize.config.k8s.io/v1beta1','kind':'Kustomization','resources':['resources.json','registry-pull.yaml'],'images':[{'name':IMAGE,'newTag':'prepared-not-deployed'}]},indent=2)+'\n')
+        if not k.exists() and not check:k.write_text(json.dumps({'apiVersion':'kustomize.config.k8s.io/v1beta1','kind':'Kustomization','resources':['resources.json'],'images':[{'name':IMAGE,'newTag':'prepared-not-deployed'}]},indent=2)+'\n')
         ns='wallettracker-'+env;spec={'project':ns,'source':{'repoURL':'ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git','targetRevision':'dev' if env=='dev' else 'main','path':'k8s/'+env},'destination':{'server':'https://kubernetes.default.svc','namespace':ns},'syncPolicy':{'syncOptions':['FailOnSharedResource=true']}}
         if env=='dev':spec['syncPolicy']['automated']={'prune':True,'selfHeal':True}
         app=obj('Application','wallettracker-'+env,'argocd',spec,'argoproj.io/v1alpha1');p=ROOT/'argocd'/(env+'.yaml');data=json.dumps(app,indent=2)+'\n'

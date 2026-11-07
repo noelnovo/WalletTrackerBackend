@@ -30,7 +30,7 @@ class DeliveryContract(unittest.TestCase):
         self.assertEqual(actual['wallettracker-db'],('downops','apps/wallettracker/dev/runtime'))
         self.assertEqual(actual['wallettracker-rsa'],('downops','apps/wallettracker/dev/rsa'))
         self.assertEqual(actual['wallettracker-signing'],('downops','apps/wallettracker/dev/signing'))
-        self.assertEqual(actual['harbor-pull'],('downops','apps/wallettracker/delivery/harbor-pull'))
+        self.assertEqual(actual['registry-pull-downops'],('downops','services/harbor/pull/instance-004'))
         c=contract()
         self.assertIsNone(c['new_kv_mount'])
         self.assertNotIn('wallettracker/data/dev/',c['policies']['wallettracker-dev-identity'])
@@ -91,7 +91,7 @@ class DeliveryContract(unittest.TestCase):
                 if x['kind']=='VaultStaticSecret':
                     t=x['spec']['destination']['transformation'];self.assertTrue(t['excludeRaw']);self.assertEqual(t['excludes'],['.*']);self.assertTrue(t['templates'])
     def test_production_canonical_identity_not_copied(self):
-        items=[x for x in resources('prod') if x['kind']=='VaultStaticSecret'];self.assertEqual({x['spec']['path'] for x in items},{'apps/wallettracker/prod/runtime','apps/wallettracker/prod/rsa','apps/wallettracker/prod/signing','apps/wallettracker/delivery/harbor-pull'})
+        items=[x for x in resources('prod') if x['kind']=='VaultStaticSecret'];self.assertEqual({x['spec']['path'] for x in items},{'apps/wallettracker/prod/runtime','apps/wallettracker/prod/rsa','apps/wallettracker/prod/signing','services/harbor/pull/instance-004'})
         self.assertTrue(all(x['spec']['mount']=='downops' for x in items))
         config=next(x for x in resources('prod') if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']
         self.assertEqual(config['ENABLE_REGISTER'],'false')
