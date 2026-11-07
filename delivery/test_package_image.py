@@ -8,6 +8,10 @@ import package_image
 
 
 class ImagePackageTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        pathlib.Path('/tmp/opencode').mkdir(parents=True, exist_ok=True)
+
     def test_provenance_is_required_and_no_deployment_is_claimed(self):
         for outcome in ('valid', 'bad-labels', 'untrusted-pr'):
             with self.subTest(outcome=outcome), tempfile.TemporaryDirectory(dir='/tmp/opencode') as directory:
