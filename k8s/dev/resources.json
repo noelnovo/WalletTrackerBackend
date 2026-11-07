@@ -586,7 +586,7 @@
             "automountServiceAccountToken": false,
             "imagePullSecrets": [
               {
-                "name": "harbor-pull"
+                "name": "harbor-pull-downops"
               }
             ],
             "securityContext": {
@@ -599,7 +599,7 @@
             "containers": [
               {
                 "name": "api",
-                "image": "registry.int.downops.win/wallettracker/backend:prepared-not-deployed",
+                "image": "registry.int.downops.win/downops/wallettracker/backend:prepared-not-deployed",
                 "ports": [
                   {
                     "containerPort": 5000,
@@ -773,7 +773,7 @@
             "automountServiceAccountToken": false,
             "imagePullSecrets": [
               {
-                "name": "harbor-pull"
+                "name": "harbor-pull-downops"
               }
             ],
             "securityContext": {
@@ -785,7 +785,7 @@
             "containers": [
               {
                 "name": "migrate",
-                "image": "registry.int.downops.win/wallettracker/backend:prepared-not-deployed",
+                "image": "registry.int.downops.win/downops/wallettracker/backend:prepared-not-deployed",
                 "ports": [
                   {
                     "containerPort": 5000,

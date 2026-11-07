@@ -8,9 +8,10 @@ Git credential helpers return secrets only to native Git over its private pipe.
 """
 import json,os,pathlib,re,subprocess,sys,tempfile,time
 from ci_access import Vault,request,raw_request
-IMAGE='registry.int.downops.win/wallettracker/backend';PUSH='registry.downops.win/wallettracker/backend'
+IMAGE='registry.int.downops.win/downops/wallettracker/backend';PUSH='registry.downops.win/downops/wallettracker/backend'
 # Production use requires verified staging/read grants and the approved release.
 DELIVERY_SECRET_PREFIXES={'dev':'downops/data/apps/wallettracker/delivery/','prod':'downops/data/apps/wallettracker/delivery/'}
+HARBOR_SECRET_PATH='downops/data/services/harbor/ci/instance-004'
 STATUS_SECRET_PATHS={env:prefix+'argocd-'+env for env,prefix in DELIVERY_SECRET_PREFIXES.items()}
 def command(args,env=None,input=None):
     p=subprocess.run(args,input=input,capture_output=True,env=env)
@@ -25,7 +26,7 @@ def main(env):
         command(['git','fetch','origin','main']);command(['git','merge-base','--is-ancestor',sha,'origin/main'])
     elif os.environ.get('CI_COMMIT_BRANCH')!='dev':raise RuntimeError('Dev publication must originate on dev')
     tag='dev-'+version+'-'+sha[:8] if env=='dev' else version;target=PUSH+':'+tag
-    vault=Vault('wallettracker-ci-'+env);prefix=DELIVERY_SECRET_PREFIXES[env];robot=vault.read(prefix+'harbor-ci');mirror=vault.read(prefix+'github-mirror');status=vault.read(STATUS_SECRET_PATHS[env])['TOKEN']
+    vault=Vault('wallettracker-ci-'+env);prefix=DELIVERY_SECRET_PREFIXES[env];robot=vault.read(HARBOR_SECRET_PATH);mirror=vault.read(prefix+'github-mirror');status=vault.read(STATUS_SECRET_PATHS[env])['TOKEN']
     with tempfile.TemporaryDirectory(prefix='wallettracker-delivery-') as tmp:
         tmp=pathlib.Path(tmp);tmp.chmod(0o700);child=dict(os.environ,DOCKER_CONFIG=str(tmp/'docker'))
         command(['docker','login','registry.downops.win','--username',robot['HARBOR_ROBOT_NAME'],'--password-stdin'],child,robot['HARBOR_ROBOT_SECRET'].encode())
