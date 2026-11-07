@@ -298,7 +298,7 @@
       "apiVersion": "secrets.hashicorp.com/v1beta1",
       "kind": "VaultStaticSecret",
       "metadata": {
-        "name": "harbor-pull",
+        "name": "registry-pull-downops",
         "namespace": "wallettracker-dev",
         "annotations": {
           "argocd.argoproj.io/sync-wave": "-20"
@@ -307,12 +307,12 @@
       "spec": {
         "vaultAuthRef": "pull",
         "mount": "downops",
-        "path": "apps/wallettracker/delivery/harbor-pull",
+        "path": "services/harbor/pull/instance-004",
         "type": "kv-v2",
         "refreshAfter": "60s",
         "hmacSecretData": true,
         "destination": {
-          "name": "harbor-pull",
+          "name": "harbor-pull-downops",
           "create": true,
           "type": "kubernetes.io/dockerconfigjson",
           "transformation": {
@@ -322,7 +322,7 @@
             ],
             "templates": {
               ".dockerconfigjson": {
-                "text": "{{- $auth := printf \"%s:%s\" .Secrets.HARBOR_ROBOT_NAME .Secrets.HARBOR_ROBOT_SECRET | b64enc -}}{{- $entry := dict \"username\" .Secrets.HARBOR_ROBOT_NAME \"password\" .Secrets.HARBOR_ROBOT_SECRET \"auth\" $auth -}}{{- dict \"auths\" (dict \"registry.int.downops.win\" $entry) | toJson -}}"
+                "text": "{{- $auth := printf \"%s:%s\" .Secrets.HARBOR_ROBOT_NAME .Secrets.HARBOR_ROBOT_SECRET | b64enc -}}{{- $entry := dict \"username\" .Secrets.HARBOR_ROBOT_NAME \"password\" .Secrets.HARBOR_ROBOT_SECRET \"auth\" $auth -}}{{- dict \"auths\" (dict \"registry.int.downops.win\" $entry \"registry.downops.win\" $entry) | toJson -}}"
               }
             }
           }
