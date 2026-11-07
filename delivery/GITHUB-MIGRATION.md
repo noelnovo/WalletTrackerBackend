@@ -6,6 +6,14 @@ GitLab CI is globally disabled and `.gitlab-ci.yml` has `when: never`. Old
 GitLab job definitions are removed; do not run the legacy `publish.py` from
 GitHub or treat an unported delivery path as passed.
 
+The security job now performs real OIDC/DT/Sonar checks rather than failing at
+a bootstrap boolean. It remains closed on any authentication or analysis error.
+Trusted image-smoke runs package a secret-free, provenance-labelled Docker image
+artifact for reviewed server-side registry promotion; PR artifacts cannot be
+packaged for deployment. No registry credential is exported into GitHub for this
+manual promotion path, and no image artifact may be promoted before all gates
+and fresh financial recovery proof pass.
+
 The exact new security OIDC role is in `github-actions-vault-plan.json`.
 An already-authorized administrator must configure it without changing unrelated
 trust or granting operator escalation. Until role/network verification,

@@ -73,8 +73,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: docker build --build-arg BUILD_REVISION="$GITHUB_SHA" -t wallettracker-ci app
+      - run: docker build --build-arg BUILD_REVISION="$GITHUB_SHA" --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.version=$(cat VERSION)" -t wallettracker-ci app
       - run: python3 delivery/image_smoke.py
+      - if: github.event_name != 'pull_request'
+        run: python3 delivery/package_image.py
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tested-backend-image-${{ github.sha }}
+          path: delivery/artifacts/
+          retention-days: 7
 
   sonarqube:
     needs: [python-tests, image-smoke]
@@ -91,7 +99,8 @@ jobs:
       - name: Require trusted, configured security identity
         run: |
           test "$GITHUB_EVENT_NAME" != pull_request || { echo 'Untrusted PRs cannot obtain analysis credentials; trusted source review is required.'; exit 1; }
-          python3 -c 'import json; assert json.load(open("delivery/github-actions-status.json"))["security_ready"] is True, "GitHub scan role/network verification is not complete; security gate remains closed"'
+          # Readiness is proven by the real OIDC login and DT/Sonar checks below,
+          # never by setting a bootstrap boolean to pretend analysis passed.
       - uses: actions/download-artifact@v4
         with:
           name: backend-coverage

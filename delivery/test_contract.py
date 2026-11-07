@@ -3,6 +3,10 @@ from vault_contract import contract
 from render_manifests import resources
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 class DeliveryContract(unittest.TestCase):
+    def test_ready_scan_body_matches_reviewed_plan(self):
+        plan=json.loads((ROOT/'delivery/github-actions-vault-plan.json').read_text())
+        body=json.loads((ROOT/'delivery/github-actions/role-scan.json').read_text())
+        self.assertEqual(body,plan['roles']['wallettracker-backend-ci-scan'])
     def test_github_is_authoritative_and_gitlab_passive(self):
         workflow=(ROOT/'.github/workflows/backend.yml').read_text()
         self.assertIn('  python-tests:',workflow)
@@ -11,6 +15,9 @@ class DeliveryContract(unittest.TestCase):
         self.assertNotIn('include:',(ROOT/'.gitlab-ci.yml').read_text())
         self.assertIn('--health-cmd "mariadb-admin ping --silent"',workflow)
         self.assertNotIn("--health-cmd='",workflow)
+        self.assertIn('role: wallettracker-backend-ci-scan',workflow)
+        self.assertIn('python3 delivery/security_scan.py',workflow)
+        self.assertNotIn('assert json.load(open("delivery/github-actions-status.json"))',workflow)
     def test_network_access_is_owned_by_existing_firewall(self):
         items=resources('dev')
         cfg=next(x for x in items if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']
