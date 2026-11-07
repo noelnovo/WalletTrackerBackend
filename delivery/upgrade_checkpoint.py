@@ -1,9 +1,33 @@
 """Fresh release-specific restore proof for the first production API-v2 upgrade."""
 import os
+import json
+import pathlib
+import re
 
 API_V2 = 'wallettracker-api-v2'
 MAIN_HEAD = 'd2a100000001'
 TENANT_HEAD = 'd2b100000001'
+
+
+def require_schema_only_approval(path, database_name):
+    """Reviewed GitOps approval, not a fabricated backup/restore checkpoint."""
+    approval = json.loads(pathlib.Path(path).read_text())
+    expected = {
+        'approval_id': 'wallettracker-api-v2-schema-only',
+        'approved_by': 'owner', 'schema_upgrade_authorized': True,
+        'database_name': database_name, 'namespace': 'wallettracker-prod',
+        'target_main_head': MAIN_HEAD, 'target_tenant_head': TENANT_HEAD,
+        'backup_requested': False, 'restore_requested': False, 'data_reset': False,
+    }
+    revision = approval.get('source_revision', '')
+    if (not re.fullmatch('[a-f0-9]{40}', revision)
+            or revision != os.environ.get('APP_BUILD_REVISION')
+            or os.environ.get('POD_NAMESPACE') != 'wallettracker-prod'
+            or database_name != 'wallet_tracker'
+            or any(type(approval.get(k)) is not type(v) or approval.get(k) != v
+                   for k, v in expected.items())
+            or set(approval) != set(expected) | {'source_revision'}):
+        raise RuntimeError('Reviewed schema-only release approval does not match this image/database')
 
 
 def statement(sql):
@@ -40,6 +64,10 @@ def require_upgrade_checkpoint(get_engine, database_name, get_tenants):
     if target != API_V2:
         raise RuntimeError('Unknown production upgrade checkpoint')
     if already_upgraded(get_engine, database_name, get_tenants):
+        return
+    approval = os.environ.get('WALLET_TRACKER_SCHEMA_UPGRADE_APPROVAL_FILE')
+    if approval:
+        require_schema_only_approval(approval, database_name)
         return
     metadata = get_engine('wallettracker_migration_metadata')
     try:

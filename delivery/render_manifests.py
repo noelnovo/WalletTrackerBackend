@@ -36,6 +36,13 @@ def resources(env):
         result[-1]['data'].update(WALLET_TRACKER_TRUSTED_PROXIES='10.2.0.10/32', WALLET_TRACKER_V2_ONLY='true')
     else:
         result[-1]['data'].update(WALLET_TRACKER_V2_ONLY='true', WALLET_TRACKER_REQUIRED_UPGRADE_CHECKPOINT='wallettracker-api-v2')
+        approval=state.get('production_schema_upgrade')
+        if approval:
+            # Explicit owner-approved existing-volume schema upgrade; do not
+            # fabricate restore evidence or enable backup resources.
+            result[-1]['data'].update(WALLET_TRACKER_REQUIRE_RESTORE_CHECKPOINT='false',
+                WALLET_TRACKER_SCHEMA_UPGRADE_APPROVAL_FILE='/migration/schema-upgrade-approval.json',
+                POD_NAMESPACE=ns)
     envdb=[{'name':'MARIADB_ROOT_PASSWORD','valueFrom':{'secretKeyRef':{'name':'wallettracker-db','key':'MARIADB_ROOT_PASSWORD'}}},{'name':'POD_IP','valueFrom':{'fieldRef':{'fieldPath':'status.podIP'}}}]
     db={'name':'mariadb','image':'mariadb:11.4.12','args':['--innodb-buffer-pool-size=64M','--max-connections=30','--performance-schema=OFF','--skip-name-resolve'],'env':envdb,'ports':[{'containerPort':3306,'name':'mysql'}],'securityContext':{'runAsNonRoot':True,'runAsUser':999,'runAsGroup':999,'allowPrivilegeEscalation':False,'capabilities':{'drop':['ALL']}},'resources':{'requests':{'cpu':'50m','memory':'128Mi'},'limits':{'cpu':'500m','memory':'384Mi' if prod else '256Mi'}},'volumeMounts':[{'name':'data','mountPath':'/var/lib/mysql'},{'name':'run','mountPath':'/run/mysqld'},{'name':'tmp','mountPath':'/tmp'}],'startupProbe':{'exec':{'command':['sh','-ec','mariadb-admin ping --silent']},'periodSeconds':5,'failureThreshold':60},'livenessProbe':{'exec':{'command':['sh','-ec','mariadb-admin ping --silent']},'periodSeconds':15},'readinessProbe':{'exec':{'command':['sh','-ec','MYSQL_PWD="$MARIADB_ROOT_PASSWORD" mariadb --protocol=tcp -h "$POD_IP" -u root --batch -e "SELECT 1" >/dev/null']},'periodSeconds':10}}
     result += [obj('Service','mariadb',ns,{'ports':[{'port':3306,'targetPort':3306}],'selector':{'app':'wallettracker-db'}}),obj('StatefulSet','mariadb',ns,{'serviceName':'mariadb','replicas':1,'persistentVolumeClaimRetentionPolicy':{'whenDeleted':'Retain','whenScaled':'Retain'},'selector':{'matchLabels':{'app':'wallettracker-db'}},'template':{'metadata':{'labels':{'app':'wallettracker-db'}},'spec':{'serviceAccountName':'wallettracker','automountServiceAccountToken':False,'terminationGracePeriodSeconds':120,'securityContext':{'fsGroup':999,'fsGroupChangePolicy':'OnRootMismatch'},'containers':[db],'volumes':[{'name':'run','emptyDir':{}},{'name':'tmp','emptyDir':{}}]}},'volumeClaimTemplates':[{'metadata':{'name':'data'},'spec':{'accessModes':['ReadWriteOnce'],'storageClassName':'local-path','resources':{'requests':{'storage':'2Gi'}}}}]},'apps/v1')]
@@ -45,6 +52,8 @@ def resources(env):
     jobapi=copy.deepcopy(api);jobapi['name']='migrate';jobapi.pop('startupProbe');jobapi.pop('livenessProbe');jobapi.pop('readinessProbe');jobapi['command']=['/app/.venv/bin/python','/migration/require_restore.py']
     jobapi['volumeMounts'].append({'name':'migration','mountPath':'/migration','readOnly':True})
     result += [obj('ConfigMap','wallettracker-migration',ns,data={'require_restore.py':(root/'delivery/require_restore.py').read_text(),'upgrade_checkpoint.py':(root/'delivery/upgrade_checkpoint.py').read_text()})]
+    if prod and state.get('production_schema_upgrade'):
+        result[-1]['data']['schema-upgrade-approval.json']=json.dumps(state['production_schema_upgrade'],sort_keys=True)
     migrate=obj('Job','wallettracker-migrate',ns,{'backoffLimit':0,'activeDeadlineSeconds':600,'template':{'metadata':{'labels':{'wallettracker.io/database-client':'true'}},'spec':{'restartPolicy':'Never','serviceAccountName':'wallettracker','automountServiceAccountToken':False,'imagePullSecrets':[{'name':'harbor-pull'}],'securityContext':{'fsGroup':10001},'containers':[jobapi],'volumes':[{'name':'rsa','secret':{'secretName':'wallettracker-rsa','defaultMode':288}},{'name':'tmp','emptyDir':{}},{'name':'migration','configMap':{'name':'wallettracker-migration'}}]}}},'batch/v1')
     migrate['metadata']['annotations']={'argocd.argoproj.io/hook':'Sync','argocd.argoproj.io/hook-delete-policy':'BeforeHookCreation,HookSucceeded','argocd.argoproj.io/sync-wave':'0'};result.append(migrate)
     result.append(obj('PersistentVolumeClaim','wallettracker-backups',ns,{'accessModes':['ReadWriteOnce'],'storageClassName':'local-path','resources':{'requests':{'storage':'2Gi'}}}))

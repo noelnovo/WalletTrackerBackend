@@ -1,5 +1,8 @@
 import os
 import unittest
+import json
+import pathlib
+import tempfile
 from unittest.mock import MagicMock, patch
 import upgrade_checkpoint
 
@@ -54,6 +57,31 @@ class UpgradeCheckpointTests(unittest.TestCase):
         for head, expected in ((upgrade_checkpoint.TENANT_HEAD, True), ('c34bd55b3ea7', False)):
             with self.subTest(head=head), patch.object(upgrade_checkpoint, 'version', side_effect=[upgrade_checkpoint.MAIN_HEAD, head]):
                 self.assertEqual(upgrade_checkpoint.already_upgraded(factory, 'fixture', lambda _: ['fixture_u1']), expected)
+
+    def test_explicit_schema_only_approval_is_not_restore_evidence(self):
+        approval = {'approval_id': 'wallettracker-api-v2-schema-only', 'approved_by': 'owner',
+                    'schema_upgrade_authorized': True, 'source_revision': 'a'*40,
+                    'database_name': 'wallet_tracker', 'namespace': 'wallettracker-prod',
+                    'target_main_head': upgrade_checkpoint.MAIN_HEAD,
+                    'target_tenant_head': upgrade_checkpoint.TENANT_HEAD,
+                    'backup_requested': False, 'restore_requested': False, 'data_reset': False}
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory)/'approval.json'
+            path.write_text(json.dumps(approval))
+            env = {'APP_BUILD_REVISION': 'a'*40, 'POD_NAMESPACE': 'wallettracker-prod',
+                   'WALLET_TRACKER_REQUIRED_UPGRADE_CHECKPOINT': upgrade_checkpoint.API_V2,
+                   'WALLET_TRACKER_SCHEMA_UPGRADE_APPROVAL_FILE': str(path)}
+            factory = MagicMock()
+            with patch.dict(os.environ, env, clear=True), patch.object(upgrade_checkpoint, 'already_upgraded', return_value=False):
+                upgrade_checkpoint.require_upgrade_checkpoint(factory, 'wallet_tracker', MagicMock())
+            factory.assert_not_called()
+            for change in [{'source_revision': 'b'*40}, {'data_reset': True},
+                           {'backup_requested': True}, {'schema_upgrade_authorized': False},
+                           {'namespace': 'wallettracker-dev'}, {'target_main_head': 'old'}]:
+                path.write_text(json.dumps(approval | change))
+                with patch.dict(os.environ, env, clear=True):
+                    with self.assertRaises(RuntimeError):
+                        upgrade_checkpoint.require_schema_only_approval(path, 'wallet_tracker')
 
 
 if __name__ == '__main__':

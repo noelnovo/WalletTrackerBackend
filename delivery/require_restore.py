@@ -1,4 +1,4 @@
-"""Fail closed before production schema changes unless an operator marked restore."""
+"""Require the reviewed production upgrade policy before applying schema changes."""
 import os,sys,time
 sys.path.insert(0,'/app')
 # Newly created Pods can briefly precede NetworkPolicy/dataplane convergence.
@@ -35,6 +35,6 @@ if os.environ.get('WALLET_TRACKER_REQUIRED_UPGRADE_CHECKPOINT'):
     try:
         require_upgrade_checkpoint(get_engine,DATABASE_NAME,get_tenant_databases)
     except Exception:
-        raise SystemExit('Fresh verified backup/restore and write-freeze checkpoint required before API-v2 production migration') from None
+        raise SystemExit('Reviewed schema-only approval or legacy recovery checkpoint required before API-v2 production migration') from None
 from migrate_all import main
 main()
