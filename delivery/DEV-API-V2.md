@@ -65,7 +65,14 @@ tenant database holds `SyncClock`, `SyncRecord`, `SyncReceipt` and legacy tables
 The tenant clock row serializes commits, including concurrent same-version
 updates. Mismatches return explicit remote versions; clients must ask the user.
 Money uses integer minor units. Category references and bill participants/payer
-are validated; equal splits distribute remainder cents deterministically.
+are validated. Optional bill `extras` contain an optional `description` (at most
+80 characters), positive integer `amount_minor` and a `participant` from the
+bill's unique names. At most 100 extras are allowed and their sum cannot exceed
+the bill total. The remaining amount is divided equally with deterministic
+remainder cents, then each person's assigned extras are added. Client-supplied
+`shares` are ignored and recomputed; extras are retained across sync. Older
+bills without extras remain equal splits. Deploy this validator before releasing
+the paired itemized-bill Android UI; no schema migration is needed.
 Deletion writes tombstones, not physical row deletion. Keep receipts/tombstones
 until a reviewed device-watermark retention protocol exists.
 

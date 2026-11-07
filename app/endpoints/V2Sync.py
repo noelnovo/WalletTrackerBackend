@@ -67,14 +67,37 @@ def bill_split(payload, amount):
     if not isinstance(participants, list) or not 2 <= len(participants) <= 100:
         raise ValueError('A bill needs 2–100 people')
     participants = [label(person, 80) for person in participants]
-    if len(set(participants)) != len(participants):
+    if len({person.lower() for person in participants}) != len(participants):
         raise ValueError('Use unique participant names')
     paid_by = label(payload.get('paid_by'), 80)
     if paid_by not in participants:
         raise ValueError('The payer must be a participant')
-    share, remainder = divmod(amount, len(participants))
+    extras = payload.get('extras', [])
+    if not isinstance(extras, list) or len(extras) > 100:
+        raise ValueError('Use at most 100 extras')
+    normalized_extras = []
+    assigned = {person: 0 for person in participants}
+    extras_total = 0
+    for extra in extras:
+        if not isinstance(extra, dict):
+            raise ValueError('Expected an extra object')
+        description = extra.get('description', '')
+        if not isinstance(description, str) or len(description) > 80:
+            raise ValueError('Extra names must be at most 80 characters')
+        cost = integer(extra.get('amount_minor'), 1, amount)
+        person = label(extra.get('participant'), 80)
+        if person not in assigned:
+            raise ValueError('Choose who had each extra')
+        extras_total += cost
+        if extras_total > amount:
+            raise ValueError('Extras cannot exceed the bill total')
+        assigned[person] += cost
+        normalized_extras.append({'description': description.strip(), 'amount_minor': cost, 'participant': person})
+    share, remainder = divmod(amount - extras_total, len(participants))
     return {'participants': participants, 'paid_by': paid_by,
-            'shares': [{'name': person, 'amount_minor': share + int(i < remainder)} for i, person in enumerate(participants)]}
+            'extras': normalized_extras,
+            'shares': [{'name': person, 'amount_minor': share + int(i < remainder) + assigned[person]}
+                       for i, person in enumerate(participants)]}
 
 
 @dataclass(frozen=True)
