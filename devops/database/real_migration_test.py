@@ -28,7 +28,7 @@ with app.test_client() as client:
 e=get_engine(name+'_u'+str(user_id))
 with e.connect() as c:assert c.execute(text('SELECT version_num FROM alembic_version')).scalar()=='d2b100000001'
 e.dispose();main();main()
-from v2_mariadb_smoke import run as v2_smoke
+from devops.database.v2_mariadb_smoke import run as v2_smoke
 v2_smoke(app)
 # Rehearse the source-account adoption SQL on this disposable CI service only.
 # No live source password, data or account is read or changed.
@@ -37,7 +37,7 @@ with engine.connect() as c:
     c.execute(text('CREATE DATABASE wallet_tracker'))
     c.execute(text('CREATE TABLE wallet_tracker.User (id INT PRIMARY KEY)'))
     c.execute(text("INSERT INTO mysql.global_priv (Host,User,Priv) SELECT '10.2.0.201',User,Priv FROM mysql.global_priv WHERE User='root' AND Host='%'"));c.commit()
-    sql=pathlib.Path(__file__).with_name('adopt-pod-grant.sql').read_text()
+    sql=(pathlib.Path(__file__).parent/'sql/adopt-pod-grant.sql').read_text()
     block=sql.split('DELIMITER //',1)[1].split('END//',1)[0]+'END'
     c.execute(text(block));c.exec_driver_sql('FLUSH PRIVILEGES')
     assert c.execute(text("SELECT COUNT(*) FROM mysql.global_priv WHERE User='root' AND Host='10.42.0.%' AND Priv=(SELECT Priv FROM mysql.global_priv WHERE User='root' AND Host='10.2.0.201')")).scalar()==1

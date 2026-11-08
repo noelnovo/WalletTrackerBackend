@@ -27,6 +27,7 @@ def main(env):
         if os.environ.get('CI_COMMIT_TAG')!='v'+version or os.environ.get('CI_COMMIT_REF_PROTECTED')!='true':raise RuntimeError('Protected versioned release tag required')
         command(['git','fetch','origin','refs/heads/main:refs/remotes/origin/main']);command(['git','merge-base','--is-ancestor',sha,'origin/main'])
     elif os.environ.get('CI_COMMIT_BRANCH')!='dev':raise RuntimeError('Dev publication must originate on dev')
+    receipt=verify()
     tag='dev-'+version+'-'+sha[:8] if env=='dev' else version;target=PUSH+':'+tag
     vault=Vault('wallettracker-ci-'+env);prefix=DELIVERY_SECRET_PREFIXES[env];robot=vault.read(HARBOR_SECRET_PATH);mirror=vault.read(prefix+'github-mirror');status=vault.read(STATUS_SECRET_PATHS[env])['TOKEN']
     with tempfile.TemporaryDirectory(prefix='wallettracker-delivery-') as tmp:
@@ -36,9 +37,8 @@ def main(env):
         if exists:
             command(['docker','pull',target],child)
             actual=json.loads(command(['docker','image','inspect',target],child))[0]['Config']['Labels'].get('org.opencontainers.image.revision')
-            if actual!=sha:raise RuntimeError('Immutable release tag belongs to another source revision')
+            if actual!=sha or json.loads(command(['docker','image','inspect',target],child))[0]['Id']!=receipt['image_id']:raise RuntimeError('Immutable tag does not match the tested source/image')
         else:
-            receipt=verify()
             command(['docker','load','-i','devops/artifacts/backend-image.tar'],child)
             image=json.loads(command(['docker','image','inspect','wallettracker-ci'],child))[0]
             if image['Id']!=receipt['image_id'] or image['Config']['Labels'].get('org.opencontainers.image.revision')!=sha:raise RuntimeError('Loaded image provenance mismatch')
