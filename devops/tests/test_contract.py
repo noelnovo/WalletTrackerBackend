@@ -1,23 +1,20 @@
 import importlib.util,json,pathlib,subprocess,sys,unittest
-from vault_contract import contract
-from render_manifests import resources
-ROOT=pathlib.Path(__file__).resolve().parents[1]
+from devops.vault.vault_contract import contract
+from devops.kubernetes.render_manifests import resources
+ROOT=pathlib.Path(__file__).resolve().parents[2]
 class DeliveryContract(unittest.TestCase):
-    def test_ready_scan_body_matches_reviewed_plan(self):
-        plan=json.loads((ROOT/'delivery/github-actions-vault-plan.json').read_text())
-        body=json.loads((ROOT/'delivery/github-actions/role-scan.json').read_text())
-        self.assertEqual(body,plan['roles']['wallettracker-backend-ci-scan'])
-    def test_github_is_authoritative_and_gitlab_passive(self):
-        workflow=(ROOT/'.github/workflows/backend.yml').read_text()
-        self.assertIn('  python-tests:',workflow)
-        self.assertIn('  sonarqube:',workflow)
-        self.assertIn('when: never',(ROOT/'.gitlab-ci.yml').read_text())
-        self.assertNotIn('include:',(ROOT/'.gitlab-ci.yml').read_text())
-        self.assertIn('--health-cmd "mariadb-admin ping --silent"',workflow)
-        self.assertNotIn("--health-cmd='",workflow)
-        self.assertIn('role: wallettracker-backend-ci-scan',workflow)
-        self.assertIn('python3 delivery/security_scan.py',workflow)
-        self.assertNotIn('assert json.load(open("delivery/github-actions-status.json"))',workflow)
+    def test_active_delivery_contract_keeps_android_on_github(self):
+        plan=json.loads((ROOT/'devops/config/delivery.json').read_text())
+        self.assertEqual(plan['ci_owner'],'gitlab')
+        self.assertEqual(plan['android']['ci_owner'],'github')
+        self.assertFalse(plan['production']['automatic'])
+    def test_gitlab_owns_ci_and_github_does_not_run_duplicate_jobs(self):
+        workflow=(ROOT/'.gitlab-ci.yml').read_text()
+        self.assertIn('application-tests:',workflow)
+        self.assertIn('security-gates:',workflow)
+        self.assertIn('publish-dev:',workflow)
+        self.assertIn('python3 -m devops.ci.security_scan',workflow)
+        self.assertFalse((ROOT/'.github/workflows/backend.yml').exists())
     def test_network_access_is_owned_by_existing_firewall(self):
         items=resources('dev')
         cfg=next(x for x in items if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data']
@@ -41,18 +38,18 @@ class DeliveryContract(unittest.TestCase):
         for role in ['wallettracker-dev-identity','wallettracker-dev-database','wallettracker-dev-pull','wallettracker-ci-dev']:
             self.assertNotIn('"wallettracker/data/',c['policies'][role])
     def test_approved_release_uses_canonical_delivery_sources(self):
-        from publish import DELIVERY_SECRET_PREFIXES,STATUS_SECRET_PATHS
+        from devops.ci.publish import DELIVERY_SECRET_PREFIXES,STATUS_SECRET_PATHS
         self.assertEqual(DELIVERY_SECRET_PREFIXES['dev'],'downops/data/apps/wallettracker/delivery/')
         self.assertEqual(STATUS_SECRET_PATHS['dev'],'downops/data/apps/wallettracker/delivery/argocd-dev')
         self.assertEqual(DELIVERY_SECRET_PREFIXES['prod'],'downops/data/apps/wallettracker/delivery/')
         self.assertEqual(STATUS_SECRET_PATHS['prod'],'downops/data/apps/wallettracker/delivery/argocd-prod')
     def test_legacy_bootstrap_cannot_create_root_engines_or_credentials(self):
         # Bootstrap remains read-only even when desired contracts gain new readers.
-        p=subprocess.run([sys.executable,str(ROOT/'delivery/bootstrap_vault.py'),'--apply','--credentials-file','/nonexistent'],capture_output=True,text=True)
+        p=subprocess.run([sys.executable,'-m','devops.vault.bootstrap_vault','--apply','--credentials-file','/nonexistent'],cwd=ROOT,capture_output=True,text=True)
         self.assertNotEqual(p.returncode,0)
         self.assertIn('writes are retired',p.stdout)
     def test_owner_vault_only_backup_policy(self):
-        state=json.loads((ROOT/'delivery/environment-state.json').read_text())
+        state=json.loads((ROOT/'devops/config/environment-state.json').read_text())
         self.assertEqual(state['kubernetes_backup_policy'],'vault-only')
         self.assertFalse(any(state['backup_enabled'].values()))
         for env in ['dev','prod']:
@@ -72,7 +69,7 @@ class DeliveryContract(unittest.TestCase):
         for policy,paths in retained.items():
             for path in paths:self.assertIn('path "'+path+'"',policies[policy])
     def test_no_recovery_and_no_early_jenkins_removal(self):
-        plan=json.loads((ROOT/'delivery/migration-plan.json').read_text());self.assertIn('authorization_update',plan);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
+        plan=json.loads((ROOT/'devops/records/kubernetes-cutover-plan.json').read_text());self.assertTrue(plan['historical']);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
     def test_database_exact_version_and_persistence(self):
         for env in ['dev','prod']:
             db=next(x for x in resources(env) if x['kind']=='StatefulSet');self.assertEqual(db['spec']['template']['spec']['containers'][0]['image'],'mariadb:11.4.12');self.assertEqual(db['spec']['persistentVolumeClaimRetentionPolicy']['whenDeleted'],'Retain')
@@ -81,9 +78,9 @@ class DeliveryContract(unittest.TestCase):
             items=resources(env);app=next(x for x in items if x['kind']=='Deployment');pod=app['spec']['template']['spec'];self.assertFalse(pod['automountServiceAccountToken']);self.assertTrue(pod['containers'][0]['securityContext']['readOnlyRootFilesystem']);self.assertEqual(pod['securityContext']['seccompProfile']['type'],'RuntimeDefault')
             cfg=next(x for x in items if x['kind']=='ConfigMap' and x['metadata']['name']=='wallettracker-config')['data'];self.assertEqual(cfg['WALLET_TRACKER_REQUIRE_MANAGED_KEYS'],'true')
     def test_prod_not_started_before_restore(self):
-        state=json.loads((ROOT/'delivery/environment-state.json').read_text());items=resources('prod');self.assertEqual(next(x for x in items if x['kind']=='Deployment')['spec']['replicas'],int(state['production_api_enabled']))
+        state=json.loads((ROOT/'devops/config/environment-state.json').read_text());items=resources('prod');self.assertEqual(next(x for x in items if x['kind']=='Deployment')['spec']['replicas'],int(state['production_api_enabled']))
         if state['production_api_enabled']:self.assertTrue(state['production_restore_verified'])
-        self.assertIn('restore_checkpoint',(ROOT/'delivery/require_restore.py').read_text())
+        self.assertIn('restore_checkpoint',(ROOT/'devops/database/require_restore.py').read_text())
     def test_vso_exact_outputs_exclude_raw_and_no_literals(self):
         for env in ['dev','prod']:
             for x in resources(env):
@@ -111,17 +108,17 @@ class DeliveryContract(unittest.TestCase):
         for x in projects:
             self.assertEqual(len(x['spec']['destinations']),1);self.assertEqual(x['spec']['clusterResourceWhitelist'],[])
     def test_ci_no_cluster_mutation_or_credential_argv(self):
-        text=(ROOT/'delivery/publish.py').read_text();self.assertNotIn('kubectl',text);self.assertNotIn('insecureIgnoreHostKey',text);self.assertIn('StrictHostKeyChecking=yes',text);self.assertIn('--password-stdin',text);self.assertIn('CI_JOB_TOKEN',text);self.assertIn('argocd.int.downops.win/api/webhook',text)
+        text=(ROOT/'devops/ci/publish.py').read_text();self.assertNotIn('kubectl',text);self.assertNotIn('insecureIgnoreHostKey',text);self.assertIn('StrictHostKeyChecking=yes',text);self.assertIn('--password-stdin',text);self.assertIn('CI_JOB_TOKEN',text);self.assertIn('argocd.int.downops.win/api/webhook',text)
     def test_deployment_uses_immutable_reference_and_manual_backup_enable(self):
         for env in ['dev','prod']:
             for x in resources(env):
-                if x['kind']=='CronJob':self.assertEqual(x['spec']['suspend'],not json.loads((ROOT/'delivery/environment-state.json').read_text())['backup_enabled'][env])
+                if x['kind']=='CronJob':self.assertEqual(x['spec']['suspend'],not json.loads((ROOT/'devops/config/environment-state.json').read_text())['backup_enabled'][env])
             self.assertNotIn(':latest',json.dumps(resources(env)))
     def test_disabled_backup_cannot_deadlock_initial_sync(self):
-        state=json.loads((ROOT/'delivery/environment-state.json').read_text())
+        state=json.loads((ROOT/'devops/config/environment-state.json').read_text())
         for env in ['dev','prod']:
             backup_names={r['metadata']['name'] for r in resources(env) if r['metadata']['name'] in ['wallettracker-backups','wallettracker-backup']}
             self.assertEqual(backup_names,{'wallettracker-backups','wallettracker-backup'} if state['backup_enabled'][env] else set())
     def test_generator_check(self):
-        p=subprocess.run([sys.executable,str(ROOT/'delivery/render_manifests.py'),'--check'],capture_output=True);self.assertEqual(p.returncode,0,p.stderr.decode())
+        p=subprocess.run([sys.executable,'-m','devops.kubernetes.render_manifests','--check'],cwd=ROOT,capture_output=True);self.assertEqual(p.returncode,0,p.stderr.decode())
 if __name__=='__main__':unittest.main()

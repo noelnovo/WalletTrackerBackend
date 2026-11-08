@@ -4,7 +4,7 @@ import json
 import pathlib
 import tempfile
 from unittest.mock import MagicMock, patch
-import upgrade_checkpoint
+from devops.database import upgrade_checkpoint
 
 
 class UpgradeCheckpointTests(unittest.TestCase):

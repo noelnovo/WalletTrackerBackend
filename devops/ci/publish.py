@@ -1,13 +1,14 @@
-"""Legacy GitLab delivery implementation; NOT an active GitHub workflow entry point.
+"""GitLab-owned immutable publication, mirrored GitOps writeback and verification.
 
-GitHub delivery/writeback cutover requires separate review; see GITHUB-MIGRATION.md.
+GitHub is a source backup; Android delivery remains independent on GitHub.
 Publish immutable artifact, environment-only GitOps writeback, refresh, verify.
 
 No kubeconfig, imperative application sync, estate-admin token or secret argv.
 Git credential helpers return secrets only to native Git over its private pipe.
 """
 import json,os,pathlib,re,subprocess,sys,tempfile,time
-from ci_access import Vault,request,raw_request
+from devops.ci.ci_access import Vault,request,raw_request
+from devops.ci.package_image import verify
 IMAGE='registry.int.downops.win/downops/wallettracker/backend';PUSH='registry.downops.win/downops/wallettracker/backend'
 # Production use requires verified staging/read grants and the approved release.
 DELIVERY_SECRET_PREFIXES={'dev':'downops/data/apps/wallettracker/delivery/','prod':'downops/data/apps/wallettracker/delivery/'}
@@ -20,11 +21,13 @@ def command(args,env=None,input=None):
 def main(env):
     if env not in ['dev','prod']:raise RuntimeError('Unknown environment')
     version=pathlib.Path('VERSION').read_text().strip();sha=os.environ['CI_COMMIT_SHA'];branch='dev' if env=='dev' else 'main'
+    if os.environ.get('CI_PIPELINE_SOURCE')=='merge_request_event':raise RuntimeError('Merge requests cannot publish')
     if not re.fullmatch(r'\d+\.\d+\.\d+',version) or not re.fullmatch('[a-f0-9]{40}',sha):raise RuntimeError('Invalid immutable version/revision')
     if env=='prod':
         if os.environ.get('CI_COMMIT_TAG')!='v'+version or os.environ.get('CI_COMMIT_REF_PROTECTED')!='true':raise RuntimeError('Protected versioned release tag required')
-        command(['git','fetch','origin','main']);command(['git','merge-base','--is-ancestor',sha,'origin/main'])
+        command(['git','fetch','origin','refs/heads/main:refs/remotes/origin/main']);command(['git','merge-base','--is-ancestor',sha,'origin/main'])
     elif os.environ.get('CI_COMMIT_BRANCH')!='dev':raise RuntimeError('Dev publication must originate on dev')
+    receipt=verify()
     tag='dev-'+version+'-'+sha[:8] if env=='dev' else version;target=PUSH+':'+tag
     vault=Vault('wallettracker-ci-'+env);prefix=DELIVERY_SECRET_PREFIXES[env];robot=vault.read(HARBOR_SECRET_PATH);mirror=vault.read(prefix+'github-mirror');status=vault.read(STATUS_SECRET_PATHS[env])['TOKEN']
     with tempfile.TemporaryDirectory(prefix='wallettracker-delivery-') as tmp:
@@ -34,9 +37,12 @@ def main(env):
         if exists:
             command(['docker','pull',target],child)
             actual=json.loads(command(['docker','image','inspect',target],child))[0]['Config']['Labels'].get('org.opencontainers.image.revision')
-            if actual!=sha:raise RuntimeError('Immutable release tag belongs to another source revision')
+            if actual!=sha or json.loads(command(['docker','image','inspect',target],child))[0]['Id']!=receipt['image_id']:raise RuntimeError('Immutable tag does not match the tested source/image')
         else:
-            command(['docker','build','--build-arg','BUILD_REVISION='+sha,'--label','org.opencontainers.image.revision='+sha,'--label','org.opencontainers.image.version='+version,'-t',target,'app'],child)
+            command(['docker','load','-i','devops/artifacts/backend-image.tar'],child)
+            image=json.loads(command(['docker','image','inspect','wallettracker-ci'],child))[0]
+            if image['Id']!=receipt['image_id'] or image['Config']['Labels'].get('org.opencontainers.image.revision')!=sha:raise RuntimeError('Loaded image provenance mismatch')
+            command(['docker','tag','wallettracker-ci',target],child)
             command(['docker','push',target],child)
         ask=tmp/'askpass';ask.write_text('#!/usr/bin/env python3\nimport os,sys\nprint("gitlab-ci-token" if "username" in sys.argv[1].lower() else os.environ["CI_JOB_TOKEN"])\n');ask.chmod(0o700);child.update(GIT_ASKPASS=str(ask),GIT_TERMINAL_PROMPT='0')
         remote=os.environ['CI_SERVER_URL'].rstrip('/')+'/'+os.environ['CI_PROJECT_PATH']+'.git'

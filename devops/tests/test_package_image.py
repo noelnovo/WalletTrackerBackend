@@ -4,22 +4,18 @@ import pathlib
 import tempfile
 import unittest
 from unittest.mock import patch
-import package_image
+from devops.ci import package_image
 
 
 class ImagePackageTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        pathlib.Path('/tmp/opencode').mkdir(parents=True, exist_ok=True)
-
     def test_provenance_is_required_and_no_deployment_is_claimed(self):
         for outcome in ('valid', 'bad-labels', 'untrusted-pr'):
-            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory(dir='/tmp/opencode') as directory:
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
                 root=pathlib.Path(directory)
                 (root/'VERSION').write_text('2.0.0\n')
-                env={'GITHUB_ACTIONS':'true','GITHUB_REPOSITORY_ID':'910129138',
-                     'GITHUB_REPOSITORY_OWNER_ID':'128699907','GITHUB_SHA':'a'*40,
-                     'GITHUB_EVENT_NAME':'pull_request' if outcome=='untrusted-pr' else 'push'}
+                env={'GITLAB_CI':'true','CI_PROJECT_ID':'1',
+                     'CI_PROJECT_PATH':'downops/wallet-tracker-backend','CI_COMMIT_SHA':'a'*40,
+                     'CI_PIPELINE_SOURCE':'merge_request_event' if outcome=='untrusted-pr' else 'push'}
                 def command(args):
                     if args==['git','rev-parse','HEAD']:return 'a'*40
                     if args==['git','rev-parse','HEAD:app']:return 'b'*40
@@ -37,7 +33,7 @@ class ImagePackageTests(unittest.TestCase):
                         else:
                             with self.assertRaises(RuntimeError):package_image.main()
                 finally:os.chdir(cwd)
-                receipt=root/'delivery/artifacts/image-stage-receipt.json'
+                receipt=root/'devops/artifacts/image-stage-receipt.json'
                 if outcome=='valid':
                     value=json.loads(receipt.read_text())
                     self.assertEqual(value['source_revision'],'a'*40)

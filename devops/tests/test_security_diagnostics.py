@@ -2,7 +2,7 @@ import contextlib
 import io
 import unittest
 from unittest.mock import patch
-import security_diagnostics
+from devops.ci import security_diagnostics
 
 
 class SafeSecurityDiagnosticsTests(unittest.TestCase):

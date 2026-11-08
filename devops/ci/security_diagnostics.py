@@ -3,7 +3,7 @@ import base64
 import json
 import pathlib
 from urllib.parse import urlencode
-from ci_access import Vault, request
+from devops.ci.ci_access import Vault, request
 
 
 def annotation(title, message):
