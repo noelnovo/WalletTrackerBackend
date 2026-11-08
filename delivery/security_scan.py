@@ -36,6 +36,7 @@ def main():
             'oom':'outofmemoryerror',
         }.items()}
         print(json.dumps({'sonarqube_failure_categories':hints,'scanner_exit_code':p.returncode}))
+        print('::error title=Sonar scanner failure categories::' + ', '.join(name for name, matched in hints.items() if matched), flush=True)
         raise RuntimeError('SonarQube analysis/quality gate failed; diagnostics withheld')
     print(json.dumps({'dependency_track_analyzed':True,'sonarqube_quality_gate_passed':True}))
 if __name__=='__main__':
