@@ -7,7 +7,7 @@
   "images": [
     {
       "name": "registry.int.downops.win/downops/wallettracker/backend",
-      "newTag": "dev-2.0.0-b672e0c2"
+      "newTag": "dev-2.1.0-cefbd2fd"
     }
   ]
 }

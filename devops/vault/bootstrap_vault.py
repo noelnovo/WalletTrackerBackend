@@ -7,7 +7,7 @@ This utility never acquires credentials, creates engines or writes records/ACLs.
 """
 import argparse
 import json
-from vault_contract import contract
+from devops.vault.vault_contract import contract
 
 
 def main():
@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--credentials-file', help='Legacy option; never read')
     args = parser.parse_args()
     if args.apply:
-        raise RuntimeError('Legacy Vault bootstrap writes are retired; use the reviewed canonical migration in delivery/VAULT-LAYOUT.md')
+        raise RuntimeError('Legacy Vault bootstrap writes are retired; use authorized operator access with the scoped Vault contract')
     desired = contract(canonical_dev=True)
     print(json.dumps({'mode': 'plan-only', 'operator_access_required': True,
                       'recovery_performed': False, 'vault_writes_supported': False,

@@ -17,3 +17,4 @@ terraform/*.private.json
 terraform/*.private.log
 terraform/*.private
 vault-env.properties
+devops/artifacts/

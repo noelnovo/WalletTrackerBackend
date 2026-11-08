@@ -1,6 +1,6 @@
 """Deterministic non-secret GitOps declarations. Does not contact a cluster/Vault."""
 import argparse,json,pathlib
-ROOT=pathlib.Path(__file__).resolve().parents[1]
+ROOT=pathlib.Path(__file__).resolve().parents[2]
 IMAGE='registry.int.downops.win/downops/wallettracker/backend'
 CTRL='vault-secrets-operator-controller-manager'
 def obj(kind,name,ns,spec=None,api='v1',**extra):
@@ -15,7 +15,7 @@ def vss(name,ns,role,mount,path,templates,typ='Opaque',restart=False):
     return obj('VaultStaticSecret',name,ns,spec,'secrets.hashicorp.com/v1beta1')
 def resources(env):
     ns='wallettracker-'+env;prod=env=='prod';root=ROOT
-    state=json.loads((root/'delivery/environment-state.json').read_text())
+    state=json.loads((root/'devops/config/environment-state.json').read_text())
     if state.get('kubernetes_backup_policy')=='vault-only' and any(state['backup_enabled'].values()):
         raise ValueError('Owner policy allows Kubernetes backups only for Vault')
     if state['production_api_enabled'] and not state['production_restore_verified']:raise ValueError('Production activation requires reviewed restore proof')
@@ -52,7 +52,7 @@ def resources(env):
     import copy
     jobapi=copy.deepcopy(api);jobapi['name']='migrate';jobapi.pop('startupProbe');jobapi.pop('livenessProbe');jobapi.pop('readinessProbe');jobapi['command']=['/app/.venv/bin/python','/migration/require_restore.py']
     jobapi['volumeMounts'].append({'name':'migration','mountPath':'/migration','readOnly':True})
-    result += [obj('ConfigMap','wallettracker-migration',ns,data={'require_restore.py':(root/'delivery/require_restore.py').read_text(),'upgrade_checkpoint.py':(root/'delivery/upgrade_checkpoint.py').read_text()})]
+    result += [obj('ConfigMap','wallettracker-migration',ns,data={'require_restore.py':(root/'devops/database/require_restore.py').read_text(),'upgrade_checkpoint.py':(root/'devops/database/upgrade_checkpoint.py').read_text()})]
     if prod and state.get('production_schema_upgrade'):
         result[-1]['data']['schema-upgrade-approval.json']=json.dumps(state['production_schema_upgrade'],sort_keys=True)
     migrate=obj('Job','wallettracker-migrate',ns,{'backoffLimit':0,'activeDeadlineSeconds':600,'template':{'metadata':{'labels':{'wallettracker.io/database-client':'true'}},'spec':{'restartPolicy':'Never','serviceAccountName':'wallettracker','automountServiceAccountToken':False,'imagePullSecrets':[{'name':'harbor-pull-downops'}],'securityContext':{'fsGroup':10001},'containers':[jobapi],'volumes':[{'name':'rsa','secret':{'secretName':'wallettracker-rsa','defaultMode':288}},{'name':'tmp','emptyDir':{}},{'name':'migration','configMap':{'name':'wallettracker-migration'}}]}}},'batch/v1')

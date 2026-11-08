@@ -1,4 +1,6 @@
 {
+  "historical": true,
+  "current_authority": "devops/config/delivery.json and environment-state.json; old recovery/backup/retirement proposals below are not current authorization",
   "binding_request": "can you migrate wallettracker whole process to kubernetes argocd vso etc.? and then remove jenkins completely and leftovers?",
   "state": "production cutover verified; old guests100/101/102 and dedicated native/Jenkins identities retired; see deployment-receipt.json",
   "vault_recovery_allowed": true,
