@@ -77,6 +77,64 @@ def test_exact_bill_shares_and_validation(v2):
     assert client.post('/api/v2/sync', headers=headers, json={'operations': [operation('bill', payload=invalid)]}).status_code == 400
 
 
+def test_assigned_extras_survive_push_retry_and_pull(v2):
+    client, headers, _ = v2
+    payload = dict(amount_minor=1500, currency='EUR', date='2026-11-05', description='Dinner',
+                   participants=['Alex', 'Sam'], paid_by='Sam',
+                   extras=[dict(description='Wine', amount_minor=500, participant='Alex')],
+                   shares=[dict(name='Alex', amount_minor=1)])  # Client totals are never trusted.
+    op = operation('bill', payload=payload)
+    first = client.post('/api/v2/sync', headers=headers, json={'operations': [op]})
+    assert first.status_code == 200
+    result = first.get_json()
+    stored = result['results'][0]['record']['payload']
+    assert [share['amount_minor'] for share in stored['shares']] == [1000, 500]
+    assert stored['paid_by'] == 'Sam'
+    assert stored['extras'] == payload['extras']
+    assert client.post('/api/v2/sync', headers=headers, json={'operations': [op]}).get_json() == result
+    assert client.get('/api/v2/sync', headers=headers).get_json()['records'][0]['payload'] == stored
+
+
+def test_split_rounding_optional_extra_names_and_zero_remainder(v2):
+    client, headers, _ = v2
+    payload = dict(amount_minor=1001, currency='EUR', date='2026-11-05', description='Dinner',
+                   participants=['A', 'B', 'C'], paid_by='A',
+                   extras=[dict(amount_minor=100, participant='C')])
+    response = client.post('/api/v2/sync', headers=headers, json={'operations': [operation('bill', payload=payload)]})
+    stored = response.get_json()['results'][0]['record']['payload']
+    assert [share['amount_minor'] for share in stored['shares']] == [301, 300, 400]
+    assert stored['extras'][0]['description'] == ''
+    payload.update(amount_minor=100, extras=[dict(amount_minor=100, participant='A')])
+    response = client.post('/api/v2/sync', headers=headers, json={'operations': [operation('bill', payload=payload)]})
+    assert [share['amount_minor'] for share in response.get_json()['results'][0]['record']['payload']['shares']] == [100, 0, 0]
+
+
+@pytest.mark.parametrize('extras', [
+    None, {}, ['invalid'], [dict(amount_minor=True, participant='A')],
+    [dict(amount_minor=0, participant='A')], [dict(amount_minor=-1, participant='A')],
+    [dict(amount_minor=1001, participant='A')], [dict(amount_minor=1.5, participant='A')],
+    [dict(amount_minor=700, participant='A'), dict(amount_minor=301, participant='B')],
+    [dict(amount_minor=100, participant='Unknown')],
+    [dict(amount_minor=100, participant='A', description=123)],
+    [dict(amount_minor=100, participant='A', description='X' * 81)],
+    [dict(amount_minor=1, participant='A')] * 101,
+])
+def test_invalid_extras_are_rejected_without_records(v2, extras):
+    client, headers, _ = v2
+    payload = dict(amount_minor=1000, currency='EUR', date='2026-11-05', description='Dinner',
+                   participants=['A', 'B'], paid_by='A', extras=extras)
+    response = client.post('/api/v2/sync', headers=headers, json={'operations': [operation('bill', payload=payload)]})
+    assert response.status_code == 400
+    assert client.get('/api/v2/sync', headers=headers).get_json()['records'] == []
+
+
+def test_duplicate_names_ignore_case_and_whitespace(v2):
+    client, headers, _ = v2
+    payload = dict(amount_minor=1000, currency='EUR', date='2026-11-05', description='Dinner',
+                   participants=['Alex', ' alex '], paid_by='Alex')
+    assert client.post('/api/v2/sync', headers=headers, json={'operations': [operation('bill', payload=payload)]}).status_code == 400
+
+
 def test_refresh_rotation_replay_and_logout(v2):
     client, headers, tokens = v2
     refreshed = client.post('/api/v2/refresh', json={'refresh_token': tokens['refresh_token']})
