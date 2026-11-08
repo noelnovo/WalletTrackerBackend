@@ -84,7 +84,8 @@ jobs:
           path: delivery/artifacts/
           retention-days: 7
 
-  sonarqube:
+  security-analysis:
+    if: github.event_name != 'pull_request'
     needs: [python-tests, image-smoke]
     runs-on: ubuntu-latest
     environment: security
@@ -120,3 +121,24 @@ jobs:
       - run: docker save wallettracker-ci -o wallettracker-ci.tar
       - run: docker run --rm -v "$PWD:/workspace:ro" anchore/syft docker-archive:/workspace/wallettracker-ci.tar -o cyclonedx-json | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json" | .components |= map(select(.type == "library"))' > bom.json
       - run: python3 delivery/security_scan.py
+
+  sonarqube:
+    # Retain MAIN's required check name without granting PRs OIDC/scan credentials.
+    needs: [python-tests, image-smoke, security-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Require the full trusted scan or its exact-source evidence
+        env:
+          APPLICATION_RESULT: ${{ needs.python-tests.result }}
+          IMAGE_RESULT: ${{ needs.image-smoke.result }}
+          SECURITY_RESULT: ${{ needs['security-analysis'].result }}
+        run: python3 delivery/verify_trusted_security.py
