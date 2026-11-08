@@ -27,5 +27,9 @@ class PublicationBoundaryTests(unittest.TestCase):
         root = pathlib.Path(__file__).resolve().parents[2]
         self.assertTrue((root / 'devops/database/sql/adopt-pod-grant.sql').is_file())
         self.assertFalse(list((root / 'delivery').glob('*.py')))
-        self.assertFalse(list(root.glob('*.md')))
+        self.assertEqual({p.name for p in root.glob('*.md')}, {'README.md'})
+        documentation=(root/'README.md').read_text()
+        self.assertIn('wallettracker-api.wallettracker-prod.svc.cluster.local:5000',documentation)
+        self.assertIn('no scheduled WalletTracker database backup',documentation)
+        self.assertIn('historical infrastructure',documentation)
         self.assertIn('devops.database.v2_mariadb_smoke', (root / 'devops/database/real_migration_test.py').read_text())
