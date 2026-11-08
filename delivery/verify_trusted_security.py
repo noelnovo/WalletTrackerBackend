@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import re
+import time
 import urllib.request
 
 REPOSITORY = 'noelnovo/WalletTrackerBackend'
@@ -30,6 +31,19 @@ def api(path):
         return json.load(response)
 
 
+def wait_for_trusted_run(sha):
+    # PR and trusted push jobs start concurrently. Wait for the real scan, not
+    # for a guessed delay, and keep failure/absence fail-closed after 15 minutes.
+    for attempt in range(21):
+        runs = api('/actions/runs?head_sha=' + sha + '&per_page=30')['workflow_runs']
+        evidence = next((run for run in runs if trusted(run, sha)), None)
+        if evidence is not None:
+            return evidence
+        if attempt < 20:
+            time.sleep(45)
+    raise RuntimeError('A successful trusted DEV/MAIN security run for this exact PR source is required')
+
+
 def main():
     if os.environ.get('GITHUB_REPOSITORY') != REPOSITORY:
         raise RuntimeError('Unexpected repository identity')
@@ -44,10 +58,7 @@ def main():
     sha = event['pull_request']['head']['sha']
     if not re.fullmatch(r'[a-f0-9]{40}', sha):
         raise RuntimeError('An exact source revision is required')
-    runs = api('/actions/runs?head_sha=' + sha + '&per_page=30')['workflow_runs']
-    evidence = next((run for run in runs if trusted(run, sha)), None)
-    if evidence is None:
-        raise RuntimeError('A successful trusted DEV/MAIN security run for this exact PR source is required')
+    evidence = wait_for_trusted_run(sha)
     jobs = api('/actions/runs/' + str(evidence['id']) + '/jobs?per_page=30')['jobs']
     checks = {job['name']: job.get('conclusion') for job in jobs}
     if any(checks.get(name) != 'success' for name in ('python-tests', 'delivery-tests', 'image-smoke')):

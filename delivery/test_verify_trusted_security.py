@@ -45,13 +45,20 @@ class TrustedSecurityGateTests(unittest.TestCase):
             with patch.dict(os.environ, env, clear=True):
                 with patch.object(gate, 'api', side_effect=[{'workflow_runs': [run]}, {'jobs': jobs}]):
                     gate.main()
-                with patch.object(gate, 'api', return_value={'workflow_runs': []}):
+                with patch.object(gate, 'api', return_value={'workflow_runs': []}), patch.object(gate.time, 'sleep'):
                     with self.assertRaises(RuntimeError):
                         gate.main()
                 bad = [dict(job, conclusion='skipped') if job['name'] == 'security-analysis' else job for job in jobs]
                 with patch.object(gate, 'api', side_effect=[{'workflow_runs': [run]}, {'jobs': bad}]):
                     with self.assertRaises(RuntimeError):
                         gate.main()
+
+    def test_pr_waits_for_concurrent_trusted_scan_instead_of_accepting_in_progress(self):
+        run = dict(self.evidence(), id=123)
+        responses = [{'workflow_runs': [dict(run, status='in_progress', conclusion=None)]}, {'workflow_runs': [run]}]
+        with patch.object(gate, 'api', side_effect=responses), patch.object(gate.time, 'sleep') as sleep:
+            self.assertEqual(gate.wait_for_trusted_run('a' * 40)['id'], 123)
+            sleep.assert_called_once_with(45)
 
 
 if __name__ == '__main__':
