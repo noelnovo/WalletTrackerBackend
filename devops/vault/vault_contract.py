@@ -2,30 +2,28 @@
 def read_policy(paths):
     return '\n'.join('path "'+p+'" { capabilities=["read"] }' for p in paths)+'\npath "auth/token/lookup-self" { capabilities=["read"] }\npath "auth/token/renew-self" { capabilities=["update"] }\npath "auth/token/revoke-self" { capabilities=["update"] }\n'
 def contract(canonical_dev=True):
+    if not canonical_dev:
+        raise ValueError('Legacy mount contracts are retired; no replayable rollback plan')
     policies={};roles={}
     for env in ['dev','prod']:
         ns='wallettracker-'+env;prod=env=='prod'
-        prefix='downops/data/apps/wallettracker/prod/' if prod else ('downops/data/apps/wallettracker/dev/' if canonical_dev else 'wallettracker/data/dev/')
-        pull_path='downops/data/apps/wallettracker/delivery/harbor-pull' if canonical_dev or prod else 'wallettracker/data/delivery/harbor-pull'
-        paths={'identity':[prefix+'rsa',prefix+'signing'],'database':[prefix+('runtime' if prod or canonical_dev else 'database')],'pull':[pull_path]}
+        prefix='downops/data/apps/wallettracker/'+env+'/'
+        pull_path='downops/data/apps/wallettracker/delivery/harbor-pull'
+        paths={'identity':[prefix+'rsa',prefix+'signing'],'database':[prefix+'runtime'],'pull':[pull_path]}
         # Preserve verified production grants until explicit reader retirement.
         if prod:
             paths['identity'] += ['downops/data/apps/wallettracker/rsa','downops/data/apps/wallettracker/signing']
             paths['database'] += ['downops/data/apps/wallettracker/runtime']
-            paths['pull'] += ['wallettracker/data/delivery/harbor-pull']
         paths['pull'].append('downops/data/services/harbor/pull/instance-004')
         for sa,reads in paths.items():
             name=ns+'-'+sa;policies[name]=read_policy(reads)
             roles['jwt/'+name]={'role_type':'jwt','user_claim':'sub','bound_subject':'system:serviceaccount:'+ns+':'+sa,'bound_audiences':['vault-vso'],'token_policies':[name],'token_no_default_policy':True,'token_type':'service','token_ttl':900,'token_max_ttl':3600}
-    name='wallettracker-repository';policies[name]=read_policy(['wallettracker/data/delivery/gitops-read','downops/data/apps/wallettracker/delivery/gitops-read'])
+    name='wallettracker-repository';policies[name]=read_policy(['downops/data/apps/wallettracker/delivery/gitops-read'])
     roles['jwt/'+name]={'role_type':'jwt','user_claim':'sub','bound_subject':'system:serviceaccount:argocd:wallettracker-repository','bound_audiences':['vault-vso'],'token_policies':[name],'token_no_default_policy':True,'token_type':'service','token_ttl':900,'token_max_ttl':3600}
     for env in ['dev','prod','scan']:
         name='wallettracker-ci-'+env
-        status_path='wallettracker/data/delivery/argocd-'+env
-        if (env=='dev' and canonical_dev) or env=='prod':status_path='downops/data/apps/wallettracker/delivery/argocd-'+env
-        paths=['downops/data/services/sonarqube/clients/instance-001','downops/data/services/dependency-track/clients/instance-001'] if env=='scan' else ['wallettracker/data/delivery/harbor-ci','wallettracker/data/delivery/github-mirror',status_path]
-        if (env=='dev' and canonical_dev) or env=='prod':paths=['downops/data/apps/wallettracker/delivery/harbor-ci','downops/data/apps/wallettracker/delivery/github-mirror',status_path]
-        if env=='prod':paths += ['wallettracker/data/delivery/harbor-ci','wallettracker/data/delivery/github-mirror','wallettracker/data/delivery/argocd-prod']
+        status_path='downops/data/apps/wallettracker/delivery/argocd-'+env
+        paths=['downops/data/services/sonarqube/clients/instance-001','downops/data/services/dependency-track/clients/instance-001'] if env=='scan' else ['downops/data/apps/wallettracker/delivery/harbor-ci','downops/data/apps/wallettracker/delivery/github-mirror',status_path]
         if env!='scan':paths.append('downops/data/services/harbor/ci/instance-004')
         policies[name]=read_policy(paths)
         claims={'project_id':'1','namespace_path':'downops'}

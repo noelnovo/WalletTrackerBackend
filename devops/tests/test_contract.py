@@ -15,7 +15,9 @@ class DeliveryContract(unittest.TestCase):
         self.assertIn('publish-dev:',workflow)
         self.assertIn('python3 -m devops.ci.security_scan',workflow)
         self.assertFalse((ROOT/'.github/workflows/backend.yml').exists())
-        self.assertEqual((ROOT/'.gitlab-ci.yml').read_text(),'include:\n  - local: .gitlab/ci.yml\n')
+        root=json.loads((ROOT/'.gitlab-ci.yml').read_text())
+        self.assertEqual(set(root),{'include'})
+        self.assertEqual(root['include'][0]['local'],'.gitlab/ci.yml')
 
     def test_open_release_mr_does_not_suppress_long_lived_branch_delivery(self):
         workflow=(ROOT/'.gitlab/ci.yml').read_text()
@@ -59,7 +61,7 @@ class DeliveryContract(unittest.TestCase):
         self.assertFalse(any(state['backup_enabled'].values()))
         for env in ['dev','prod']:
             self.assertFalse(any(r['metadata']['name'] in ['wallettracker-backups','wallettracker-backup'] for r in resources(env)))
-    def test_shared_repository_reader_is_gitops_managed_and_grants_stay_additive(self):
+    def test_repository_reader_and_unrelated_grants_remain_unchanged(self):
         generated=json.loads((ROOT/'k8s/credentials/resources.json').read_text())['items']
         reader=next(x for x in generated if x['kind']=='VaultStaticSecret')
         self.assertEqual((reader['spec']['mount'],reader['spec']['path']),('downops','apps/wallettracker/delivery/gitops-read'))
@@ -67,12 +69,27 @@ class DeliveryContract(unittest.TestCase):
         retained={
             'wallettracker-prod-database':['downops/data/apps/wallettracker/runtime'],
             'wallettracker-prod-identity':['downops/data/apps/wallettracker/rsa','downops/data/apps/wallettracker/signing'],
-            'wallettracker-prod-pull':['wallettracker/data/delivery/harbor-pull'],
-            'wallettracker-ci-prod':['wallettracker/data/delivery/harbor-ci','wallettracker/data/delivery/github-mirror','wallettracker/data/delivery/argocd-prod'],
-            'wallettracker-repository':['wallettracker/data/delivery/gitops-read','downops/data/apps/wallettracker/delivery/gitops-read'],
+            'wallettracker-prod-pull':['downops/data/apps/wallettracker/delivery/harbor-pull','downops/data/services/harbor/pull/instance-004'],
+            'wallettracker-ci-prod':['downops/data/apps/wallettracker/delivery/harbor-ci','downops/data/apps/wallettracker/delivery/github-mirror','downops/data/apps/wallettracker/delivery/argocd-prod','downops/data/services/harbor/ci/instance-004'],
+            'wallettracker-repository':['downops/data/apps/wallettracker/delivery/gitops-read'],
         }
         for policy,paths in retained.items():
             for path in paths:self.assertIn('path "'+path+'"',policies[policy])
+    def test_legacy_contract_fails_closed_and_old_mount_grants_are_absent(self):
+        with self.assertRaises(ValueError):contract(canonical_dev=False)
+        for text in contract()['policies'].values():
+            self.assertNotIn('path "wallettracker/',text)
+    def test_gitlab_batch_role_complete_bodies_preserve_protected_bounds(self):
+        for env in ['dev','prod','scan']:
+            claims={'project_id':'1','namespace_path':'downops','ref_protected':'true'}
+            if env=='dev':claims.update(ref_type='branch',ref='dev')
+            elif env=='prod':claims.update(ref_type='tag',ref='v*')
+            else:claims.update(ref_type=['branch','tag'],ref=['dev','main','v*'])
+            name='wallettracker-ci-'+env
+            self.assertEqual(contract()['roles']['gitlab-ci/'+name],{
+                'role_type':'jwt','user_claim':'user_id','bound_audiences':['https://vault.int.downops.win'],
+                'bound_claims_type':'glob','bound_claims':claims,'token_policies':[name],
+                'token_no_default_policy':True,'token_type':'batch','token_ttl':900,'token_max_ttl':900})
     def test_no_recovery_and_no_early_jenkins_removal(self):
         plan=json.loads((ROOT/'devops/records/kubernetes-cutover-plan.json').read_text());self.assertTrue(plan['historical']);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
     def test_database_exact_version_and_persistence(self):
