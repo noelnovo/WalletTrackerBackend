@@ -18,47 +18,27 @@ development, CI and administration services—not the former native API/database
 GitLab CI builds and validates the application; **ArgoCD applies the desired state from
 Git**. CI does not deploy through a kubeconfig or directly restart Kubernetes pods.
 
-### 1. CI/CD and software supply chain
+### 1. CI: tests and software supply chain
 
 ```mermaid
 flowchart TB
-    Developer["Developer / reviewed source changes"] --> Workspace
-    subgraph ProxmoxCI["Proxmox: development and CI services"]
-        Workspace["Dev workspace<br/>LXC 110"] --> GitLab["GitLab CE<br/>LXC 114 / protected dev and main"]
-        GitLab --> Runner["GitLab Runner<br/>LXC 115 / disposable Docker-DinD"]
-        SonarQube["SonarQube<br/>LXC 109 / required quality gate"]
-        DependencyTrack["Dependency-Track<br/>LXC 112 / SBOM dependency analysis"]
-    end
+    Workspace["Dev workspace / LXC 110"] --> GitLab["GitLab CE / LXC 114<br/>Reviewed, protected source"]
+    GitLab --> Runner["GitLab Runner / LXC 115<br/>Disposable Docker-DinD"]
     Runner --> ContractTests["delivery-tests<br/>Operational regression contracts"]
     Runner --> ApplicationTests["application-tests<br/>pytest, coverage, MariaDB and Alembic"]
     ContractTests --> ImageSmoke["image-smoke<br/>Managed-key refusal and API-DB readiness"]
     ApplicationTests --> ImageSmoke
     ImageSmoke --> Artifact["Tested image archive and receipt<br/>Source, app tree, version, SHA-256"]
     Artifact --> Syft["Syft<br/>CycloneDX SBOM from tested image"]
-    Syft --> DependencyTrack
-    ApplicationTests -->|"Coverage and source"| SonarQube
+    Syft --> DependencyTrack["Dependency-Track / LXC 112<br/>SBOM dependency analysis"]
+    ApplicationTests -->|"Coverage and source"| SonarQube["SonarQube / LXC 109<br/>Required quality gate"]
     Runner -->|"Protected-ref GitLab OIDC"| CIVault["Vault<br/>Short-lived, scoped CI credentials"]
-    CIVault -. "Analysis credentials" .-> SonarQube
-    CIVault -. "Analysis credentials" .-> DependencyTrack
+    CIVault -. "Scoped analysis credentials" .-> SecurityGate
     SonarQube -->|"Quality gate passed"| SecurityGate["security-gates<br/>Successful analysis required"]
     DependencyTrack -->|"SBOM processing completed"| SecurityGate
-    Artifact -->|"Checksum and identity verified"| Publish["Reuse the tested artifact<br/>No deployment-image rebuild"]
+    Artifact -->|"Verified identity"| Publish["Validated artifact for publication<br/>No deployment-image rebuild"]
     SecurityGate --> Publish
     CIVault -. "Registry, mirror and status credentials" .-> Publish
-    Publish --> DevPublish["Protected dev<br/>Automatic publication"]
-    Publish --> ProdPublish["Reviewed release and protected vX.Y.Z<br/>Manual production publication"]
-    DevPublish --> Harbor["Harbor on Malza<br/>Immutable image over HTTPS"]
-    ProdPublish --> Harbor
-    Harbor --> Writeback["CI GitOps writeback<br/>Only the selected environment image reference"]
-    Writeback -->|"Same-project CI_JOB_TOKEN"| GitLab
-    Writeback --> Webhook["Immediate private ArgoCD webhook refresh"]
-    Writeback -. "Dev automatic / main owner-controlled mirror" .-> GitHub["GitHub backend backup<br/>Backend Actions disabled"]
-    GitLab -->|"Authoritative desired state"| ArgoCD["ArgoCD and Kustomize<br/>Isolated environment AppProjects"]
-    Webhook --> ArgoCD
-    ArgoCD --> SyncPolicy["Dev: automatic sync<br/>Prod: approved manual sync"]
-    SyncPolicy --> MigrationHook["Alembic Sync hook<br/>Before the API rollout"]
-    MigrationHook --> APIRollout["Kubernetes API rollout"]
-    APIRollout --> RolloutProof["Exact Git revision and image<br/>Observed generation, Ready replica, HTTPS build header"]
 ```
 
 **SonarQube and Dependency-Track are actual integrations, not placeholder boxes.**
@@ -71,11 +51,29 @@ checks; trusted protected refs perform the privileged analysis/publication steps
 The arrows above show CI stage order: **CI** writes Git and sends the Argo webhook.
 Harbor itself is not a registry polling deployer, and CI has no cluster-admin kubeconfig.
 
+### 2. CD: promotion, GitOps and rollout verification
+
+```mermaid
+flowchart TB
+    Artifact["Validated CI artifact<br/>Source / app tree / SHA-256"] --> Publication["Dev: protected branch, automatic<br/>Prod: reviewed release, protected vX.Y.Z, manual"]
+    Publication --> Harbor["Harbor on Malza<br/>Immutable OCI image / verified HTTPS"]
+    Harbor --> Writeback["CI GitOps writeback<br/>Selected environment image reference only"]
+    Writeback -->|"CI_JOB_TOKEN"| GitLab["GitLab authoritative desired state"]
+    Writeback --> Webhook["Immediate private ArgoCD webhook"]
+    Writeback -. "Dev auto / main owner-controlled" .-> GitHub["GitHub backup<br/>Backend Actions disabled"]
+    GitLab --> ArgoCD["ArgoCD and Kustomize<br/>Isolated AppProjects"]
+    Webhook --> ArgoCD
+    ArgoCD --> SyncPolicy["Dev: automated sync<br/>Prod: approved manual sync"]
+    SyncPolicy --> MigrationHook["Alembic Sync hook<br/>Before API rollout"]
+    MigrationHook --> APIRollout["Restricted Kubernetes API Deployment"]
+    APIRollout --> RolloutProof["Exact revision / image / observed generation<br/>Ready replica and HTTPS build header"]
+```
+
 Each environment has its own API Deployment, MariaDB StatefulSet, persistent database
 volume, runtime identity and Kubernetes namespace. Dev is not a copy of production's
 financial data, and its database/signing/RSA credentials are separate.
 
-### 2. Runtime, networking, identity material and persistence
+### 3. Runtime, networking and persistence
 
 ```mermaid
 flowchart TB
@@ -86,56 +84,44 @@ flowchart TB
     NPM -->|"HTTP to Malza NodePort 31410"| DevService
     Tunnel -->|"Cluster-local HTTP origin :5000"| ProdService
 
-    subgraph MalzaRuntime["Malza: k3s / containerd, single node"]
-        subgraph DevNamespace["wallettracker-dev: restricted workloads and NetworkPolicies"]
-            DevService["Development API Service"] --> DevAPI["Flask / uWSGI API<br/>Non-root, read-only root filesystem"]
-            DevMigration["Migration Sync hook<br/>Selected API image / Alembic"] -->|"Must succeed before rollout"| DevAPI
-            DevAPI --> DevDBService["Private MariaDB Service"]
-            DevDBService --> DevDB["MariaDB 11.4.12 StatefulSet"]
-            DevDB --> DevPVC["Database PVC<br/>StatefulSet retains PVC; PV reclaim Delete"]
-            DevSecrets["Dev database, RSA and signing Secrets"]
-            DevPull["Dev pull-only registry Secret"]
-        end
-        subgraph ProdNamespace["wallettracker-prod: restricted workloads and NetworkPolicies"]
-            ProdService["Production API Service"] --> ProdAPI["Flask / uWSGI API<br/>Non-root, read-only root filesystem"]
-            ProdMigration["Migration Sync hook<br/>Operator-reviewed schema policy"] -->|"Must succeed before rollout"| ProdAPI
-            ProdAPI --> ProdDBService["Private MariaDB Service"]
-            ProdDBService --> ProdDB["MariaDB 11.4.12 StatefulSet"]
-            ProdDB --> ProdPVC["Database PVC<br/>StatefulSet retains PVC; PV reclaim Retain"]
-            ProdSecrets["Prod database, RSA and signing Secrets"]
-            ProdPull["Prod pull-only registry Secret"]
-        end
-        DevPVC --> LocalStorage["local-path storage on Malza<br/>Not multi-node HA or a database backup"]
-        ProdPVC --> LocalStorage
-        Vault["HashiCorp Vault<br/>Runtime, identity, registry and repository records"]
-        Vault -->|"Verified TLS / scoped projected JWT identities"| VSO["Vault Secrets Operator<br/>Exact filtered secret outputs"]
-        Vault --> VaultBackup["Vault-only backup job<br/>Secrets, not WalletTracker database contents"]
-        VSO --> DevSecrets
-        VSO --> ProdSecrets
-        VSO --> DevPull
-        VSO --> ProdPull
-        VSO --> RepoSecret["Read-only Argo Git repository Secret"]
-        VSO --> TunnelSecret["Shared tunnel token Secret"]
-        RepoSecret -. "Strict SSH repository access" .-> ArgoRuntime["ArgoCD<br/>Dev auto / production manual"]
-        ArgoRuntime --> DevMigration
-        ArgoRuntime --> ProdMigration
-        CredentialApp["wallettracker-credentials<br/>main / auto reconcile / prune off"] --> RepoSecret
+    subgraph DevNamespace["Malza k3s / wallettracker-dev"]
+        DevService["API Service / :5000"] --> DevAPI["Flask / uWSGI API<br/>Restricted, non-root, read-only"]
+        DevAPI --> DevDBService["Private database Service"]
+        DevDBService --> DevDB["MariaDB 11.4.12 StatefulSet"]
+        DevDB --> DevPVC["Retained PVC<br/>Dev PV reclaim: Delete"]
     end
-    DevSecrets -. "Mounted / injected identity" .-> DevAPI
-    DevSecrets -. "Migration identity" .-> DevMigration
-    DevSecrets -. "Database password" .-> DevDB
-    ProdSecrets -. "Mounted / injected identity" .-> ProdAPI
-    ProdSecrets -. "Migration identity" .-> ProdMigration
-    ProdSecrets -. "Database password" .-> ProdDB
-    TunnelSecret -. "VSO-delivered token" .-> Tunnel
-    HarborRuntime["Harbor<br/>registry.int.downops.win / immutable OCI image"] -->|"Authenticated pull"| DevAPI
-    HarborRuntime -->|"Authenticated pull"| ProdAPI
-    HarborRuntime -->|"Same selected image"| DevMigration
-    HarborRuntime -->|"Same selected image"| ProdMigration
-    DevPull -. "Pull authentication" .-> DevAPI
-    ProdPull -. "Pull authentication" .-> ProdAPI
-    DevPull -. "Pull authentication" .-> DevMigration
-    ProdPull -. "Pull authentication" .-> ProdMigration
+    subgraph ProdNamespace["Malza k3s / wallettracker-prod"]
+        ProdService["API Service / :5000"] --> ProdAPI["Flask / uWSGI API<br/>Restricted, non-root, read-only"]
+        ProdAPI --> ProdDBService["Private database Service"]
+        ProdDBService --> ProdDB["MariaDB 11.4.12 StatefulSet"]
+        ProdDB --> ProdPVC["Retained PVC<br/>Prod PV reclaim: Retain"]
+    end
+    DevPVC --> LocalStorage["Single-node Malza / local-path disk<br/>Not multi-node HA or database backup"]
+    ProdPVC --> LocalStorage
+```
+
+Namespace-specific NetworkPolicies restrict database connectivity and isolate the
+two environments. The public tunnel targets production; NPM's internal NodePort
+route targets development. Image, migration and secret delivery are expanded below.
+
+### 4. Secrets, image pulls and repository identity
+
+```mermaid
+flowchart TB
+    Vault["HashiCorp Vault"] -->|"Scoped projected JWT / verified TLS"| VSO["Vault Secrets Operator<br/>Exact filtered outputs"]
+    Vault --> VaultBackup["Vault-only backup job<br/>Secrets, not application database data"]
+    VSO --> DevSecrets["Dev DB / RSA / signing Secrets"]
+    VSO --> ProdSecrets["Prod DB / RSA / signing Secrets"]
+    DevSecrets -. "Separate dev identity" .-> DevConsumers["Dev API, database and migration job"]
+    ProdSecrets -. "Separate production identity" .-> ProdConsumers["Prod API, database and migration job"]
+    VSO --> PullSecrets["Separate environment pull-only credentials"]
+    PullSecrets -. "Authenticated pull" .-> ImageConsumers["API and Alembic migration pods<br/>Same selected application image"]
+    HarborRuntime["Harbor / immutable OCI image"] --> ImageConsumers
+    VSO --> RepoSecret["Read-only Argo Git repository Secret"]
+    RepoSecret -. "Strict SSH trust" .-> ArgoRuntime["ArgoCD repository access"]
+    CredentialApp["wallettracker-credentials<br/>main / auto reconcile / prune off"] --> RepoSecret
+    VSO --> TunnelSecret["Shared tunnel token Secret"]
+    TunnelSecret -. "Runtime token delivery" .-> Tunnel["Shared cloudflared connector"]
 ```
 
 Solid arrows describe delivery, traffic or data access; dotted arrows describe
@@ -281,7 +267,7 @@ cluster-local Service endpoint directly. Neither MariaDB Service is publicly exp
 
 ## Observability, alerting and infrastructure access
 
-### 3. Shared operational visibility and SSO
+### 5. Shared logs, investigation and alert delivery
 
 ```mermaid
 flowchart TB
@@ -291,23 +277,9 @@ flowchart TB
     NativeAlloy --> LokiGateway
     LokiGateway --> Loki["Loki<br/>Central log storage and LogQL"]
 
-    Kubelet["kubelet and cAdvisor<br/>Pod / container resource metrics"] --> Prometheus
-    KubeStateMetrics["kube-state-metrics<br/>Pod / workload state"] --> Prometheus
-    NodeExporter["node-exporter<br/>Malza host metrics"] --> Prometheus
-    MetricsVault["Vault"] --> MetricsAgent["Official Vault Agent<br/>TLS and renewable scoped scrape access"]
-    MetricsVault --> ObservabilityVSO["VSO observability inputs<br/>SSO, log/query and alert credentials"]
-    ObservabilityVSO -. "Scoped secret delivery" .-> LokiGateway
-    ObservabilityVSO -. "Query authentication" .-> QueryGateway
-    ObservabilityVSO -. "SSO and alert configuration" .-> Grafana
-    MetricsAgent -. "Native consumer configuration" .-> Prometheus["Prometheus<br/>Non-admin native service / Proxmox LXC 116"]
-    Prometheus -->|"Verified TLS"| QueryGateway["Private Prometheus query gateway<br/>lens-metrics / Kubernetes RBAC"]
-    QueryGateway --> Grafana["Shared Grafana dashboards<br/>Namespace filters, logs and resource metrics"]
-    QueryGateway --> Freelens["Freelens / Lens metrics<br/>Existing authorized Kubernetes users"]
-    Loki --> Grafana
-
-    Keycloak["Keycloak<br/>Infrastructure OIDC / SSO"] --> Grafana
-    Keycloak --> GitLabSSO["GitLab interactive login"]
-    Keycloak --> ProxmoxSSO["Proxmox GUI OIDC realm"]
+    Loki --> Grafana["Shared Grafana dashboards<br/>Namespace-filtered investigation"]
+    LogVault["Vault / VSO<br/>Collector and alert credentials"] -. "Scoped inputs" .-> LokiGateway
+    LogVault -. "Alert authentication" .-> Grafana
     Grafana --> Alerting["Shared Grafana alert rules<br/>Application errors, ingestion and capacity"]
     Alerting --> MailRelay["Authenticated grafana-mail-relay"]
     MailRelay --> MailGateway["Shared mail-gateway"]
@@ -325,6 +297,26 @@ metrics through the private Prometheus gateway. These are **infrastructure/resou
 metrics and log observations**, not financial KPIs, request-rate measurements or
 instrumented HTTP latency/tracing. Log rate must not be presented as HTTP request rate.
 No dedicated dashboard, exporter or new application instrumentation was added here.
+
+### 6. Resource metrics and infrastructure SSO
+
+```mermaid
+flowchart TB
+    Kubelet["kubelet / cAdvisor<br/>Pod and container resources"] --> Prometheus
+    KubeStateMetrics["kube-state-metrics<br/>Workload state"] --> Prometheus
+    NodeExporter["node-exporter<br/>Malza host metrics"] --> Prometheus
+    MetricsVault["Vault"] --> MetricsAgent["Official Vault Agent<br/>Scoped scrape access and TLS"]
+    MetricsAgent -. "Renewed native configuration" .-> Prometheus["Prometheus / Proxmox LXC 116<br/>Non-admin native service"]
+    Prometheus -->|"Verified TLS"| QueryGateway["Private query gateway<br/>lens-metrics / Kubernetes RBAC"]
+    QueryGateway --> Grafana["Shared Grafana<br/>Resource metrics and logs"]
+    QueryGateway --> Freelens["Freelens / Lens<br/>Authorized Kubernetes users"]
+    MetricsVault --> ObservabilityVSO["VSO / query and SSO inputs"]
+    ObservabilityVSO -. "Query credentials" .-> QueryGateway
+    ObservabilityVSO -. "SSO credentials" .-> Grafana
+    Keycloak["Keycloak / infrastructure OIDC"] --> Grafana
+    Keycloak --> GitLabSSO["GitLab interactive login"]
+    Keycloak --> ProxmoxSSO["Proxmox GUI OIDC realm"]
+```
 
 Keycloak's Proxmox/GitLab/Grafana SSO is separate from the backend's application-user
 authentication and from GitLab's job OIDC tokens issued to Vault. ArgoCD currently
