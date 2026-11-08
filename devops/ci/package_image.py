@@ -1,10 +1,11 @@
-"""Package a tested, secret-free GitHub-built image for reviewed registry promotion."""
+"""Package the tested GitLab-built image without rebuilding for publication."""
 import hashlib
 import json
 import os
 import pathlib
 import re
 import subprocess
+import sys
 
 
 def command(args):
@@ -15,13 +16,13 @@ def command(args):
 
 
 def main():
-    expected = {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY_ID': '910129138',
-                'GITHUB_REPOSITORY_OWNER_ID': '128699907'}
+    expected = {'GITLAB_CI': 'true', 'CI_PROJECT_ID': '1',
+                'CI_PROJECT_PATH': 'downops/wallet-tracker-backend'}
     if any(os.environ.get(key) != value for key, value in expected.items()):
-        raise RuntimeError('Only the approved GitHub backend workflow may package this image')
-    if os.environ.get('GITHUB_EVENT_NAME') not in ('push', 'workflow_dispatch'):
-        raise RuntimeError('Untrusted PR images cannot be staged for production')
-    sha = os.environ.get('GITHUB_SHA', '')
+        raise RuntimeError('Only the approved GitLab backend pipeline may package this image')
+    if os.environ.get('CI_PIPELINE_SOURCE') == 'merge_request_event':
+        raise RuntimeError('Untrusted merge request images cannot be staged for publication')
+    sha = os.environ.get('CI_COMMIT_SHA', '')
     version = pathlib.Path('VERSION').read_text().strip()
     if not re.fullmatch('[a-f0-9]{40}', sha) or not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise RuntimeError('Invalid version/source identity')
@@ -30,7 +31,7 @@ def main():
     labels = json.loads(command(['docker', 'image', 'inspect', '--format', '{{json .Config.Labels}}', 'wallettracker-ci']))
     if labels.get('org.opencontainers.image.revision') != sha or labels.get('org.opencontainers.image.version') != version:
         raise RuntimeError('Built image provenance label mismatch')
-    output = pathlib.Path('delivery/artifacts')
+    output = pathlib.Path('devops/artifacts')
     output.mkdir(parents=True, exist_ok=True)
     archive = output / 'backend-image.tar'
     command(['docker', 'save', 'wallettracker-ci', '-o', str(archive)])
@@ -45,5 +46,18 @@ def main():
     print('Tested backend image packaged; registry promotion and deployment remain gated')
 
 
+def verify():
+    output = pathlib.Path('devops/artifacts')
+    receipt = json.loads((output / 'image-stage-receipt.json').read_text())
+    with (output / 'backend-image.tar').open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if (receipt['archive_sha256'] != digest
+            or receipt['source_revision'] != os.environ.get('CI_COMMIT_SHA')
+            or receipt['version'] != pathlib.Path('VERSION').read_text().strip()
+            or receipt['app_tree'] != command(['git', 'rev-parse', 'HEAD:app'])):
+        raise RuntimeError('Tested image artifact integrity/source mismatch')
+    return receipt
+
+
 if __name__ == '__main__':
-    main()
+    verify() if sys.argv[1:] == ['--verify'] else main()

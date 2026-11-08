@@ -1,6 +1,6 @@
 """Preserve real DT/Sonar gates using scoped job identity, no secret argv/logs."""
 import base64,json,os,pathlib,subprocess,time
-from ci_access import Vault,request
+from devops.ci.ci_access import Vault,request
 def main():
     vault=Vault('wallettracker-ci-scan');dt=vault.read('downops/data/services/dependency-track/clients/instance-001');sonar=vault.read('downops/data/services/sonarqube/clients/instance-001')
     headers={'X-Api-Key':dt['DT_API_KEY']};url=dt['DT_URL'].rstrip('/')
@@ -15,7 +15,7 @@ def main():
     cmd=['docker','run','--rm','--env','SONAR_TOKEN','--env','SONAR_HOST_URL','--volume',os.getcwd()+':/usr/src','sonarsource/sonar-scanner-cli:latest','-Dsonar.qualitygate.wait=true','-Dsonar.qualitygate.timeout=300']
     p=subprocess.run(cmd,capture_output=True,env=env)
     if p.returncode:
-        from security_diagnostics import report
+        from devops.ci.security_diagnostics import report
         try:report(sonar)
         except Exception as error:print(json.dumps({'diagnostics_unavailable':type(error).__name__}))
         output=(p.stdout+p.stderr).decode(errors='replace').lower()
