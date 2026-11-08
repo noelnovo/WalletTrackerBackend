@@ -69,7 +69,7 @@ class DeliveryContract(unittest.TestCase):
         for policy,paths in retained.items():
             for path in paths:self.assertIn('path "'+path+'"',policies[policy])
     def test_no_recovery_and_no_early_jenkins_removal(self):
-        plan=json.loads((ROOT/'devops/config/migration-plan.json').read_text());self.assertIn('authorization_update',plan);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
+        plan=json.loads((ROOT/'devops/records/kubernetes-cutover-plan.json').read_text());self.assertTrue(plan['historical']);self.assertIn('Jenkins removal before replacement proof',plan['prohibited'])
     def test_database_exact_version_and_persistence(self):
         for env in ['dev','prod']:
             db=next(x for x in resources(env) if x['kind']=='StatefulSet');self.assertEqual(db['spec']['template']['spec']['containers'][0]['image'],'mariadb:11.4.12');self.assertEqual(db['spec']['persistentVolumeClaimRetentionPolicy']['whenDeleted'],'Retain')

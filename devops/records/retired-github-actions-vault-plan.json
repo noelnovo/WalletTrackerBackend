@@ -1,4 +1,6 @@
 {
+  "historical": true,
+  "retired": "Backend CI moved to GitLab; this does not authorize recreating GitHub pipelines or changing Android identities",
   "status": "administrator review required; no recovery, operator self-grant or old-role deletion",
   "auth_mount": "github-actions",
   "issuer": "https://token.actions.githubusercontent.com",

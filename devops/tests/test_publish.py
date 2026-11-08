@@ -1,6 +1,5 @@
 import os
 import pathlib
-import tempfile
 import unittest
 from unittest.mock import patch
 from devops.ci import publish
@@ -23,3 +22,10 @@ class PublicationBoundaryTests(unittest.TestCase):
         self.assertIn("['docker','load'", source)
         self.assertIn("['docker','tag'", source)
         self.assertIn('Source superseded', source)
+
+    def test_tooling_layout_keeps_runtime_migration_files_and_sql_separate(self):
+        root = pathlib.Path(__file__).resolve().parents[2]
+        self.assertTrue((root / 'devops/database/sql/adopt-pod-grant.sql').is_file())
+        self.assertFalse(list((root / 'delivery').glob('*.py')))
+        self.assertFalse(list(root.glob('*.md')))
+        self.assertIn('devops.database.v2_mariadb_smoke', (root / 'devops/database/real_migration_test.py').read_text())

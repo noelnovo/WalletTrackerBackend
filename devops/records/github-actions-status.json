@@ -1,4 +1,6 @@
 {
+  "historical": true,
+  "retired": "Backend GitHub Actions disabled during the owner-approved GitLab CI migration; Android unchanged",
   "security_ready": false,
   "delivery_ready": false,
   "reason": "Exact GitHub OIDC roles/network and GitHub GitOps writeback require verified cutover. Never report skipped analysis or delivery as passed."
