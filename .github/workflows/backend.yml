@@ -129,6 +129,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,6 +139,7 @@ jobs:
           python-version: '3.13'
       - name: Require the full trusted scan or its exact-source evidence
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           APPLICATION_RESULT: ${{ needs.python-tests.result }}
           IMAGE_RESULT: ${{ needs.image-smoke.result }}
           SECURITY_RESULT: ${{ needs['security-analysis'].result }}

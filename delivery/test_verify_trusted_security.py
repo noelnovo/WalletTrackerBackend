@@ -4,6 +4,8 @@ import os
 import json
 import pathlib
 import tempfile
+import io
+import urllib.error
 import verify_trusted_security as gate
 
 
@@ -59,6 +61,26 @@ class TrustedSecurityGateTests(unittest.TestCase):
         with patch.object(gate, 'api', side_effect=responses), patch.object(gate.time, 'sleep') as sleep:
             self.assertEqual(gate.wait_for_trusted_run('a' * 40)['id'], 123)
             sleep.assert_called_once_with(45)
+
+    def test_evidence_api_uses_only_builtin_job_token(self):
+        with patch.dict(os.environ, {'GITHUB_TOKEN': 'synthetic-job-token'}, clear=True), \
+                patch.object(gate.urllib.request, 'urlopen', return_value=io.BytesIO(b'{"workflow_runs": []}')) as open_url:
+            self.assertEqual(gate.api('/actions/runs'), {'workflow_runs': []})
+            request = open_url.call_args.args[0]
+            self.assertEqual(request.get_header('Authorization'), 'Bearer synthetic-job-token')
+            self.assertEqual(request.full_url, 'https://api.github.com/repos/' + gate.REPOSITORY + '/actions/runs')
+
+    def test_evidence_api_fails_with_safe_http_diagnostic(self):
+        error = urllib.error.HTTPError('https://api.github.com/private', 403, 'sensitive response', {}, io.BytesIO(b'never-print-this-body'))
+        with patch.dict(os.environ, {'GITHUB_TOKEN': 'synthetic-job-token'}, clear=True), \
+                patch.object(gate.urllib.request, 'urlopen', side_effect=error):
+            with self.assertRaisesRegex(RuntimeError, 'HTTP 403') as caught:
+                gate.api('/actions/runs')
+            self.assertNotIn('synthetic-job-token', str(caught.exception))
+            self.assertNotIn('never-print-this-body', str(caught.exception))
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, 'token is missing'):
+                gate.api('/actions/runs')
 
 
 if __name__ == '__main__':

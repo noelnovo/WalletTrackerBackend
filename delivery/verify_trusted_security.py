@@ -1,10 +1,11 @@
-"""Credential-free PR gate backed by exact-source trusted security analysis."""
+"""Analysis-credential-free PR gate backed by exact-source trusted security analysis."""
 import json
 import os
 import pathlib
 import re
 import time
 import urllib.request
+import urllib.error
 
 REPOSITORY = 'noelnovo/WalletTrackerBackend'
 WORKFLOW = '.github/workflows/backend.yml'
@@ -23,12 +24,24 @@ def trusted(run, sha):
 
 
 def api(path):
-    # Public repository evidence only. No PAT, OIDC, Vault or analysis token.
+    # Use only the built-in actions:read job token. Anonymous runner traffic can
+    # be rate-limited and must not be mistaken for a failed Sonar analysis.
+    token = os.environ.get('GITHUB_TOKEN')
+    if not token:
+        raise RuntimeError('Built-in read-only GitHub evidence token is missing')
     request = urllib.request.Request('https://api.github.com/repos/' + REPOSITORY + path,
                                      headers={'Accept': 'application/vnd.github+json',
-                                              'User-Agent': 'WalletTracker-Exact-Source-Security-Gate'})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.load(response)
+                                              'User-Agent': 'WalletTracker-Exact-Source-Security-Gate',
+                                              'Authorization': 'Bearer ' + token})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        status = error.code
+        error.close()
+        raise RuntimeError(f'GitHub CI evidence request failed with HTTP {status}; verify actions:read access and rate limits') from None
+    except urllib.error.URLError:
+        raise RuntimeError('GitHub CI evidence network request failed; no scan result was accepted') from None
 
 
 def wait_for_trusted_run(sha):
