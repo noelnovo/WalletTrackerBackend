@@ -9,15 +9,16 @@ class DeliveryContract(unittest.TestCase):
         self.assertEqual(plan['android']['ci_owner'],'github')
         self.assertFalse(plan['production']['automatic'])
     def test_gitlab_owns_ci_and_github_does_not_run_duplicate_jobs(self):
-        workflow=(ROOT/'.gitlab-ci.yml').read_text()
+        workflow=(ROOT/'.gitlab/ci.yml').read_text()
         self.assertIn('application-tests:',workflow)
         self.assertIn('security-gates:',workflow)
         self.assertIn('publish-dev:',workflow)
         self.assertIn('python3 -m devops.ci.security_scan',workflow)
         self.assertFalse((ROOT/'.github/workflows/backend.yml').exists())
+        self.assertEqual((ROOT/'.gitlab-ci.yml').read_text(),'include:\n  - local: .gitlab/ci.yml\n')
 
     def test_open_release_mr_does_not_suppress_long_lived_branch_delivery(self):
-        workflow=(ROOT/'.gitlab-ci.yml').read_text()
+        workflow=(ROOT/'.gitlab/ci.yml').read_text()
         self.assertIn('$CI_COMMIT_BRANCH != "dev" && $CI_COMMIT_BRANCH != "main" && $CI_OPEN_MERGE_REQUESTS',workflow)
     def test_network_access_is_owned_by_existing_firewall(self):
         items=resources('dev')
