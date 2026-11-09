@@ -1,405 +1,122 @@
 # WalletTracker Backend
 
-WalletTracker's Python API, database migrations and Kubernetes delivery configuration.
-The Android client lives in [WalletTracker](https://github.com/noelnovo/WalletTracker);
-this repository owns the backend, not APK signing or mobile releases.
+The Python API behind [WalletTracker](https://github.com/noelnovo/WalletTracker),
+with database migrations and a complete container-based delivery workflow.
 
-**DevOps case study:** a self-managed delivery platform combining Proxmox, GitLab CI,
-Docker/DinD build isolation, SonarQube, Dependency-Track, Harbor, k3s/containerd,
-Kustomize/ArgoCD, Vault/VSO, Cloudflare Tunnel, NPM, Keycloak and shared
-Alloy/Loki/Prometheus/Grafana observability. The diagrams below separate delivery,
-runtime traffic/secrets and operational visibility so the integrations are explicit
-without hiding everything inside a generic “security” or “Kubernetes” box.
+This project connects development, automated testing, software supply-chain analysis,
+GitOps deployment, secret management and centralized logging. The overview below
+focuses on how the technologies work together, rather than where they are hosted.
 
-## Architecture
-
-The API and its databases run in **Kubernetes on Malza**. Proxmox hosts the supporting
-development, CI and administration services—not the former native API/database guests.
-GitLab CI builds and validates the application; **ArgoCD applies the desired state from
-Git**. CI does not deploy through a kubeconfig or directly restart Kubernetes pods.
-
-### 1. CI: tests and software supply chain
+## End-to-end architecture
 
 ```mermaid
 flowchart TB
-    Workspace["Dev workspace / LXC 110"] --> GitLab["GitLab CE / LXC 114<br/>Reviewed, protected source"]
-    GitLab --> Runner["GitLab Runner / LXC 115<br/>Disposable Docker-DinD"]
-    Runner --> ContractTests["delivery-tests<br/>Operational regression contracts"]
-    Runner --> ApplicationTests["application-tests<br/>pytest, coverage, MariaDB and Alembic"]
-    ContractTests --> ImageSmoke["image-smoke<br/>Managed-key refusal and API-DB readiness"]
-    ApplicationTests --> ImageSmoke
-    ImageSmoke --> Artifact["Tested image archive and receipt<br/>Source, app tree, version, SHA-256"]
-    Artifact --> Syft["Syft<br/>CycloneDX SBOM from tested image"]
-    Syft --> DependencyTrack["Dependency-Track / LXC 112<br/>SBOM dependency analysis"]
-    ApplicationTests -->|"Coverage and source"| SonarQube["SonarQube / LXC 109<br/>Required quality gate"]
-    Runner -->|"Protected-ref GitLab OIDC"| CIVault["Vault<br/>Short-lived, scoped CI credentials"]
-    CIVault -. "Scoped analysis credentials" .-> SecurityGate
-    SonarQube -->|"Quality gate passed"| SecurityGate["security-gates<br/>Successful analysis required"]
-    DependencyTrack -->|"SBOM processing completed"| SecurityGate
-    Artifact -->|"Verified identity"| Publish["Validated artifact for publication<br/>No deployment-image rebuild"]
-    SecurityGate --> Publish
-    CIVault -. "Registry, mirror and status credentials" .-> Publish
-```
-
-**SonarQube and Dependency-Track are actual integrations, not placeholder boxes.**
-`devops/ci/security_scan.py` submits the Syft-generated SBOM to Dependency-Track,
-waits for processing and runs SonarQube with quality-gate waiting enabled. Publication
-depends on that job succeeding. The diagram does not claim an additional Trivy job or
-an unimplemented blanket CVSS threshold. Merge requests run credential-free test/image
-checks; trusted protected refs perform the privileged analysis/publication steps.
-
-The arrows above show CI stage order: **CI** writes Git and sends the Argo webhook.
-Harbor itself is not a registry polling deployer, and CI has no cluster-admin kubeconfig.
-
-### 2. CD: promotion, GitOps and rollout verification
-
-```mermaid
-flowchart TB
-    Artifact["Validated CI artifact<br/>Source / app tree / SHA-256"] --> Publication["Dev: protected branch, automatic<br/>Prod: reviewed release, protected vX.Y.Z, manual"]
-    Publication --> Harbor["Harbor on Malza<br/>Immutable OCI image / verified HTTPS"]
-    Harbor --> Writeback["CI GitOps writeback<br/>Selected environment image reference only"]
-    Writeback -->|"CI_JOB_TOKEN"| GitLab["GitLab authoritative desired state"]
-    Writeback --> Webhook["Immediate private ArgoCD webhook"]
-    Writeback -. "Dev auto / main owner-controlled" .-> GitHub["GitHub backup<br/>Backend Actions disabled"]
-    GitLab --> ArgoCD["ArgoCD and Kustomize<br/>Isolated AppProjects"]
-    Webhook --> ArgoCD
-    ArgoCD --> SyncPolicy["Dev: automated sync<br/>Prod: approved manual sync"]
-    SyncPolicy --> MigrationHook["Alembic Sync hook<br/>Before API rollout"]
-    MigrationHook --> APIRollout["Restricted Kubernetes API Deployment"]
-    APIRollout --> RolloutProof["Exact revision / image / observed generation<br/>Ready replica and HTTPS build header"]
-```
-
-Each environment has its own API Deployment, MariaDB StatefulSet, persistent database
-volume, runtime identity and Kubernetes namespace. Dev is not a copy of production's
-financial data, and its database/signing/RSA credentials are separate.
-
-### 3. Runtime, networking and persistence
-
-```mermaid
-flowchart TB
-    Clients["Android / public API clients"] --> Cloudflare["Cloudflare HTTPS edge"]
-    Cloudflare -->|"Encrypted outbound tunnel connection"| Tunnel["Shared cloudflared connector<br/>kube-system"]
-    InternalClients["Authorized LAN / VPN clients"] --> InternalDNS["Internal DNS<br/>AdGuard LXC 104 and cluster CoreDNS"]
-    InternalDNS --> NPM["Nginx Proxy Manager<br/>Proxmox LXC 113 / internal HTTPS"]
-    NPM -->|"HTTP to Malza NodePort 31410"| DevService
-    Tunnel -->|"Cluster-local HTTP origin :5000"| ProdService
-
-    subgraph DevNamespace["Malza k3s / wallettracker-dev"]
-        DevService["API Service / :5000"] --> DevAPI["Flask / uWSGI API<br/>Restricted, non-root, read-only"]
-        DevAPI --> DevDBService["Private database Service"]
-        DevDBService --> DevDB["MariaDB 11.4.12 StatefulSet"]
-        DevDB --> DevPVC["Retained PVC<br/>Dev PV reclaim: Delete"]
+    subgraph Source["Development and dual remotes"]
+        Developer["Development"] --> GitLab["GitLab / primary"]
+        GitLab -. "Code backup" .-> GitHub["GitHub / mirror"]
     end
-    subgraph ProdNamespace["Malza k3s / wallettracker-prod"]
-        ProdService["API Service / :5000"] --> ProdAPI["Flask / uWSGI API<br/>Restricted, non-root, read-only"]
-        ProdAPI --> ProdDBService["Private database Service"]
-        ProdDBService --> ProdDB["MariaDB 11.4.12 StatefulSet"]
-        ProdDB --> ProdPVC["Retained PVC<br/>Prod PV reclaim: Retain"]
+
+    subgraph Pipeline["Continuous integration and security"]
+        CI["GitLab CI / Runner<br/>Tests and coverage"] --> Image["Docker / DinD<br/>Build and smoke-test"]
+        CI --> SonarQube["SonarQube<br/>Quality gate"]
+        Image --> Syft["Syft / CycloneDX<br/>Image SBOM"]
+        Syft --> DependencyTrack["Dependency-Track<br/>Vulnerability analysis"]
+        SonarQube --> Gate["Security checks passed"]
+        DependencyTrack --> Gate
+        Image --> Publish["Publish tested artifact"]
+        Gate --> Publish
     end
-    DevPVC --> LocalStorage["Single-node Malza / local-path disk<br/>Not multi-node HA or database backup"]
-    ProdPVC --> LocalStorage
+    GitLab --> CI
+
+    subgraph Delivery["Registry and GitOps delivery"]
+        Harbor["Harbor<br/>Immutable images"]
+        GitOps["GitOps manifests"] --> ArgoCD["ArgoCD / Kustomize"]
+    end
+    Publish -->|"Push image"| Harbor
+    Publish -->|"Commit image reference"| GitOps
+    GitOps -->|"CI refresh webhook"| ArgoCD
+
+    subgraph Runtime["Kubernetes / k3s - dev and production"]
+        Workloads["API / Alembic migrations"] --> MariaDB["MariaDB<br/>Persistent volumes"]
+        VSO["Vault Secrets Operator"]
+    end
+    ArgoCD -->|"Dev auto / prod manual"| Workloads
+    Harbor -->|"Pull image"| Workloads
+    Vault["HashiCorp Vault"] -. "CI secrets / OIDC" .-> Pipeline
+    Vault -. "Runtime secrets" .-> VSO
+    VSO -. "Application secrets" .-> Workloads
+    VSO -. "DB credentials" .-> MariaDB
+
+    Public["Internet clients"] --> Cloudflare["Cloudflare<br/>HTTPS / Tunnel"]
+    Cloudflare -->|"Production Service"| Workloads
+    Internal["Internal clients"] --> Nginx["Nginx Proxy Manager<br/>Internal proxy / TLS certs"]
+    Nginx -->|"Development Service"| Workloads
+
+    Workloads -->|"stdout / stderr"| Alloy["Grafana Alloy"]
+    MariaDB -->|"stdout / stderr"| Alloy
+    Alloy --> Loki["Loki"]
+    Loki --> Grafana["Grafana<br/>Logs / dashboards / alerts"]
 ```
 
-Namespace-specific NetworkPolicies restrict database connectivity and isolate the
-two environments. The public tunnel targets production; NPM's internal NodePort
-route targets development. Image, migration and secret delivery are expanded below.
+### Technologies and responsibilities
 
-### 4. Secrets, image pulls and repository identity
-
-```mermaid
-flowchart TB
-    Vault["HashiCorp Vault"] -->|"Scoped projected JWT / verified TLS"| VSO["Vault Secrets Operator<br/>Exact filtered outputs"]
-    Vault --> VaultBackup["Vault-only backup job<br/>Secrets, not application database data"]
-    VSO --> DevSecrets["Dev DB / RSA / signing Secrets"]
-    VSO --> ProdSecrets["Prod DB / RSA / signing Secrets"]
-    DevSecrets -. "Separate dev identity" .-> DevConsumers["Dev API, database and migration job"]
-    ProdSecrets -. "Separate production identity" .-> ProdConsumers["Prod API, database and migration job"]
-    VSO --> PullSecrets["Separate environment pull-only credentials"]
-    PullSecrets -. "Authenticated pull" .-> ImageConsumers["API and Alembic migration pods<br/>Same selected application image"]
-    HarborRuntime["Harbor / immutable OCI image"] --> ImageConsumers
-    VSO --> RepoSecret["Read-only Argo Git repository Secret"]
-    RepoSecret -. "Strict SSH trust" .-> ArgoRuntime["ArgoCD repository access"]
-    CredentialApp["wallettracker-credentials<br/>main / auto reconcile / prune off"] --> RepoSecret
-    VSO --> TunnelSecret["Shared tunnel token Secret"]
-    TunnelSecret -. "Runtime token delivery" .-> Tunnel["Shared cloudflared connector"]
-```
-
-Solid arrows describe delivery, traffic or data access; dotted arrows describe
-credential material or backup mirroring. Dev and production identities are distinct.
-The migration jobs also pull the selected application image using their environment's
-pull credential. No database/RSA/signing secret is baked into the image or stored in Git.
-
-### Platform responsibilities
-
-| Component | Location | Responsibility |
+| Area | Technology | Role in the workflow |
 |---|---|---|
-| k3s / containerd | Malza, `10.2.0.100` | Runs the API, MariaDB, ArgoCD, Vault, VSO and the shared tunnel connector |
-| Development workspace | Proxmox LXC 110 | Backend clone at `/home/dev/wallet-backend`; local checks and development |
-| GitLab CE | Proxmox LXC 114 | Authoritative backend source, protected branches and CI pipelines |
-| GitLab Runner | Proxmox LXC 115 | Existing Docker executor / disposable DinD jobs for tests, image smoke and publication |
-| Nginx Proxy Manager | Proxmox LXC 113 | HTTPS reverse proxy for internal service names, including the dev API |
-| SonarQube | Proxmox LXC 109 | Source analysis and quality gate |
-| Dependency-Track | Proxmox LXC 112 | Software bill of materials and dependency analysis |
-| Harbor | Malza | Stores the backend's immutable OCI images |
-| Vault + VSO | Malza's Kubernetes cluster | Scoped secret storage and automatic Kubernetes secret delivery |
-| Cloudflare Tunnel | Shared connector in `kube-system` | Outbound tunnel connecting Cloudflare's edge to the production Service |
-| AdGuard / CoreDNS | Proxmox LXC 104 / `kube-system` | Internal DNS and Kubernetes Service discovery |
-| Alloy / Loki / Grafana | Shared `logging` namespace | Log collection, centralized investigation, shared dashboards and alerting |
-| Prometheus | Proxmox LXC 116 | Native, non-admin resource-metric collection with Vault Agent-managed access |
-| Kubernetes exporters / query gateway | `monitoring` / `lens-metrics` | kube-state-metrics, node-exporter and private Prometheus access for Grafana/Freelens |
-| Keycloak | Shared service on Malza | Infrastructure OIDC/SSO for Proxmox, GitLab and Grafana—not WalletTracker user authentication |
-| Mail gateway | Shared `mail-gateway` namespace | Existing Grafana alert delivery through the authenticated mail relay |
+| Development | Python, Flask, pytest, Alembic | Implement the API, test its behavior and version database schema changes. The Android client is maintained separately. |
+| Source availability | GitLab + GitHub dual remotes | GitLab is the authoritative backend source and CI platform; GitHub holds a synchronized code backup. This preserves a second copy, not automatic CI or deployment failover. Backend GitHub Actions are disabled to avoid duplicate pipelines. |
+| Continuous integration | GitLab CI / Runner | Run operational contracts, application tests, coverage and real migration checks against disposable databases before an image can be published. Merge requests use credential-free checks; trusted protected refs run the privileged security and publication steps. |
+| Image validation | Docker / DinD, OCI artifacts | Build and smoke-test the container, then bind it to its source revision, version and SHA-256 receipt. Publication reuses the tested artifact instead of rebuilding it. Docker is the CI build tool; Kubernetes runs the image through containerd. |
+| Code quality | SonarQube | Analyze source and coverage, report maintainability and security findings, and require a successful quality gate before publication. |
+| Dependency security | Syft, CycloneDX, Dependency-Track | Generate a software bill of materials (SBOM) from the tested image and submit it for dependency and vulnerability analysis. CI waits for processing; this is distinct from SonarQube's source-quality gate. |
+| Image registry | Harbor | Store versioned, immutable OCI images over HTTPS. Scoped push and pull identities separate CI publication from workload image access. |
+| Desired state | Git, Kustomize | Keep Kubernetes configuration and each environment's image reference under version control. After publication, CI writes the selected reference to Git and immediately refreshes ArgoCD through its webhook. |
+| Continuous delivery | ArgoCD | Apply the desired state from Git, run migration hooks and reconcile Kubernetes resources. Development syncs automatically; production requires an approved release and manual sync. CI does not deploy using a cluster-admin kubeconfig. |
+| Application runtime | Kubernetes / k3s, containerd | Run isolated development and production workloads with Services, non-root containers, read-only API filesystems, health probes and NetworkPolicies. CI verifies the exact dev revision, image and readiness after rollout. |
+| Database | MariaDB, Alembic, persistent volumes | Keep each environment's data separate and persistent across pod replacement. Version main and tenant schemas; a failed migration blocks rollout. Persistence alone is not a backup or high availability. |
+| Secrets | HashiCorp Vault, Vault Secrets Operator (VSO) | Store scoped credentials centrally. CI uses short-lived GitLab OIDC access; VSO delivers filtered Kubernetes Secrets for applications, databases, registry pulls and repository access. Private keys and passwords stay out of Git and images. |
+| Internal HTTPS | Nginx Proxy Manager | Manage TLS certificates and reverse-proxy internal service names, including the development API. Internal routing is separate from the public production tunnel. |
+| Internet exposure | Cloudflare, Cloudflare Tunnel | Terminate public HTTPS and route requests through an outbound encrypted connector to the production Kubernetes Service, without opening a new inbound WAN port. Databases and development are not publicly exposed. |
+| Log collection | Grafana Alloy | Collect API and database stdout/stderr with Kubernetes context and forward logs to centralized storage. |
+| Log storage | Loki | Store and query aggregated logs using labels and LogQL, enabling investigation across workloads and environments. |
+| Operational visibility | Grafana | Explore Loki logs through shared dashboards and existing alert rules. This documents log-based visibility, not custom business analytics or distributed tracing. |
 
-Kubernetes uses containerd. Docker/DinD here describes the **existing CI executor**;
-it is not the application runtime or a requirement to install Docker on new hosts.
+Solid arrows show delivery, traffic or log flow; dotted arrows show code backup or
+credential delivery. Registry-pull and shared tunnel credentials are also delivered
+through VSO; their individual edges are omitted to keep the overview readable.
+Shared services have their own lifecycle—this repository does not install the whole platform.
 
-### Integration coverage at a glance
+## Delivery policy
 
-| DevOps concern | Concrete implementation | Where it is represented |
-|---|---|---|
-| Source control and review | GitLab authority, protected `dev`/`main`, GitHub backup, separate Android ownership | CI diagram and branch policy |
-| Test isolation | Operational tests, pytest/coverage, real synthetic MariaDB/Alembic checks, disposable image smoke | CI diagram / `.gitlab/ci.yml` |
-| Supply-chain analysis | Tested-image Syft/CycloneDX SBOM → Dependency-Track; source/coverage → SonarQube quality gate | Explicit CI diagram nodes / `devops/ci/security_scan.py` |
-| Artifact provenance | Version/source/app-tree receipt, archive SHA-256 and image identity checks | CI artifact and publication nodes |
-| Registry and promotion | HTTPS Harbor, immutable tags, reuse of tested artifact, protected/manual production release | CI diagram / `devops/ci/publish.py` |
-| GitOps | Environment-only writeback, immediate webhook, Kustomize, Argo AppProjects and migration hooks | CI and runtime diagrams / `k8s`, `argocd`, `bootstrap` |
-| Secrets and authorization | GitLab OIDC for CI; scoped Vault/VSO delivery; separate runtime, pull and Git credentials | Both delivery/runtime Vault flows |
-| Traffic, discovery and TLS | Cloudflare Tunnel, private production Service, NPM dev NodePort, AdGuard/CoreDNS | Runtime diagram and networking section |
-| Persistence and migrations | Separate MariaDB StatefulSets/PVCs, Alembic, retention policy and recovery limits | Runtime diagram / database policy |
-| Operations and access | Alloy/Loki logs, Prometheus resource metrics, shared Grafana dashboards/alerts, Keycloak infrastructure SSO | Observability diagram below |
+- **Development:** reviewed changes land on protected `dev`; successful tests,
+  security checks and image publication lead to GitOps writeback, an immediate
+  ArgoCD refresh and an automatically verified rollout. Image tags include the
+  version and source revision.
+- **Production:** a reviewed `dev` → `main` release and matching protected `vX.Y.Z`
+  tag precede manual image publication and an approved manual ArgoCD sync.
+  Routine source or documentation updates are not production releases.
+- **Source backup:** corresponding branches are synchronized across GitLab and
+  GitHub. A second remote protects source availability, not database contents.
+- **Data safety:** dev checks use synthetic data, never production finances.
+  Persistent volumes are not a recovery plan, and there is no scheduled
+  WalletTracker database backup in Kubernetes. Vault backups protect secrets,
+  not application data; risky database work needs an explicitly approved recovery plan.
 
-Shared platform services are existing estate infrastructure, maintained separately
-from this application's CI/manifests. Their presence is not a claim that this repository
-installs every operator, identity provider, registry or monitoring service.
+## Repository guide
 
-## Source ownership and branches
-
-| Project | Authoritative source and pipelines | Backup |
-|---|---|---|
-| Backend | GitLab `downops/wallet-tracker-backend` | GitHub `noelnovo/WalletTrackerBackend`; backend Actions disabled |
-| Android | GitHub `noelnovo/WalletTracker`; GitHub Actions, signing and releases | GitLab `downops/wallet-tracker-android`; GitLab CI disabled |
-
-Corresponding `dev` and `main` branches are kept identical between each project's two
-hosting services. Backend and Android are separate codebases; they are not copies of
-one another. Long-lived branches are protected and must not be deleted during a merge.
-
-| Backend branch | Namespace | Argo source path | Deployment policy |
-|---|---|---|---|
-| `dev` | `wallettracker-dev` | `k8s/dev` | Automatic after successful tests, security gates and image publication |
-| `main` | `wallettracker-prod` | `k8s/prod` | Protected release source; production publication and Argo sync remain manual |
-
-The separate `wallettracker-credentials` Argo Application tracks `main` at
-`k8s/credentials`, automatically reconciling the repository credential declarations
-without automatic pruning. This is **not** automatic production application deployment.
-
-### Development delivery
-
-1. Push reviewed integration changes to `dev`.
-2. CI runs operational contract tests, application tests and real MariaDB migration tests.
-3. CI builds an image and checks startup, managed-key refusal and API/database readiness
-   against disposable synthetic databases.
-4. Dependency-Track processes the SBOM and SonarQube must pass its quality gate.
-5. CI verifies and publishes the **same tested image artifact**, rather than rebuilding
-   a different image for deployment.
-6. CI updates only `k8s/dev/kustomization.yaml` through the same-project `CI_JOB_TOKEN`.
-7. CI immediately refreshes ArgoCD through its private webhook and mirrors the GitOps
-   revision to GitHub. ArgoCD's automated dev sync performs the rollout.
-8. CI verifies the exact Git revision, deployed image, observed generation, Ready
-   replica and HTTPS readiness/build revision.
-
-Dev delivery continues while a `dev` → `main` release MR is open. Generated GitOps
-commits are excluded from recursive builds; stale pipelines cannot overwrite newer
-source. A registry push or an Argo webhook HTTP success alone is not deployment proof.
-
-### Production releases
-
-`VERSION` is the backend delivery version. Dev tags use
-`dev-<version>-<source-sha>`; production tags use the plain semantic version. Images are
-stored at `downops/wallettracker/backend`, published through `registry.downops.win`
-and pulled through `registry.int.downops.win` over verified HTTPS.
-
-Production requires a reviewed `dev` → `main` release, a matching protected `vX.Y.Z`
-tag, the manual production publication job and an approved **manual ArgoCD sync**.
-The publisher checks the version/tag, source ancestry, tested artifact and mirror
-state. Routine pushes to `main` do not publish or roll out production. Existing
-protected GitHub `main` mirroring remains an owner-controlled operation.
-
-Source and deployed versions can legitimately differ. For example, the verified
-2026-11-08 snapshot has source `VERSION=2.1.0`, dev on a `dev-2.1.0-*` image and production
-still on the approved **2.0.0 digest**. CI/layout/documentation maintenance is not a
-production release.
-
-## Networking and Cloudflare
-
-### Public production API
-
-```text
-https://api.downops.win
-  → Cloudflare HTTPS edge
-  → shared k3s cloudflared tunnel
-  → http://wallettracker-api.wallettracker-prod.svc.cluster.local:5000
-  → production API pods
-  → production MariaDB Service
-```
-
-The currently verified shared tunnel is `k3s-cluster-rotated-20261006`. Its connector
-runs in `kube-system` and obtains its tunnel token through VSO. The tunnel is shared
-infrastructure, not a new dedicated WalletTracker connector for each release.
-
-Cloudflare handles public HTTPS; the connector maintains an outbound encrypted tunnel.
-The HTTP origin above is a private Kubernetes Service, **not a public HTTP endpoint**.
-Production traffic does not need to traverse NPM or the production NodePort, and an
-application deployment does not open a new inbound WAN port.
-
-### Internal development API
-
-```text
-https://wallettracker-dev.int.downops.win
-  → NPM on Proxmox LXC 113
-  → http://10.2.0.100:31410
-  → wallettracker-api Service in wallettracker-dev
-  → development API pods
-```
-
-Dev access remains internal and subject to the existing LAN/VPN/firewall rules.
-Production's Service also exposes NodePort `31411`, but the public tunnel uses its
-cluster-local Service endpoint directly. Neither MariaDB Service is publicly exposed.
-
-## Observability, alerting and infrastructure access
-
-### 5. Shared logs, investigation and alert delivery
-
-```mermaid
-flowchart TB
-    WalletPods["WalletTracker API and MariaDB pods<br/>wallettracker-dev / wallettracker-prod"] -->|"stdout / stderr"| Alloy["Alloy DaemonSet<br/>Kubernetes log collection"]
-    NativeServices["Supported Proxmox / native service logs<br/>Including GitLab, SonarQube and Dependency-Track"] --> NativeAlloy["Native Alloy collectors<br/>Sanitized runtime facades where required"]
-    Alloy --> LokiGateway["Authenticated Loki gateway<br/>Capacity / ingestion safeguards"]
-    NativeAlloy --> LokiGateway
-    LokiGateway --> Loki["Loki<br/>Central log storage and LogQL"]
-
-    Loki --> Grafana["Shared Grafana dashboards<br/>Namespace-filtered investigation"]
-    LogVault["Vault / VSO<br/>Collector and alert credentials"] -. "Scoped inputs" .-> LokiGateway
-    LogVault -. "Alert authentication" .-> Grafana
-    Grafana --> Alerting["Shared Grafana alert rules<br/>Application errors, ingestion and capacity"]
-    Alerting --> MailRelay["Authenticated grafana-mail-relay"]
-    MailRelay --> MailGateway["Shared mail-gateway"]
-    MailGateway --> Email["Configured alert recipients"]
-```
-
-WalletTracker uses the **existing shared Kubernetes dashboards**, not a dedicated
-WalletTracker-only dashboard. In Grafana, select `wallettracker-dev` or
-`wallettracker-prod` in **Estado y errores** (`/d/downops-overview`) or
-**Investigar registros** (`/d/kubernetes-logs`), under the internal
-`https://logs.int.downops.win` service.
-
-The live review confirmed WalletTracker log aggregation in Loki and running-pod
-metrics through the private Prometheus gateway. These are **infrastructure/resource
-metrics and log observations**, not financial KPIs, request-rate measurements or
-instrumented HTTP latency/tracing. Log rate must not be presented as HTTP request rate.
-No dedicated dashboard, exporter or new application instrumentation was added here.
-
-### 6. Resource metrics and infrastructure SSO
-
-```mermaid
-flowchart TB
-    Kubelet["kubelet / cAdvisor<br/>Pod and container resources"] --> Prometheus
-    KubeStateMetrics["kube-state-metrics<br/>Workload state"] --> Prometheus
-    NodeExporter["node-exporter<br/>Malza host metrics"] --> Prometheus
-    MetricsVault["Vault"] --> MetricsAgent["Official Vault Agent<br/>Scoped scrape access and TLS"]
-    MetricsAgent -. "Renewed native configuration" .-> Prometheus["Prometheus / Proxmox LXC 116<br/>Non-admin native service"]
-    Prometheus -->|"Verified TLS"| QueryGateway["Private query gateway<br/>lens-metrics / Kubernetes RBAC"]
-    QueryGateway --> Grafana["Shared Grafana<br/>Resource metrics and logs"]
-    QueryGateway --> Freelens["Freelens / Lens<br/>Authorized Kubernetes users"]
-    MetricsVault --> ObservabilityVSO["VSO / query and SSO inputs"]
-    ObservabilityVSO -. "Query credentials" .-> QueryGateway
-    ObservabilityVSO -. "SSO credentials" .-> Grafana
-    Keycloak["Keycloak / infrastructure OIDC"] --> Grafana
-    Keycloak --> GitLabSSO["GitLab interactive login"]
-    Keycloak --> ProxmoxSSO["Proxmox GUI OIDC realm"]
-```
-
-Keycloak's Proxmox/GitLab/Grafana SSO is separate from the backend's application-user
-authentication and from GitLab's job OIDC tokens issued to Vault. ArgoCD currently
-uses its local/project-token authentication; no Argo OIDC/Dex configuration was found
-in this snapshot. The diagram deliberately does **not** imply Keycloak protects every
-service or that WalletTracker users authenticate through infrastructure SSO.
-
-Shared Grafana alert configuration routes notifications through the mail relay and
-mail gateway. This is existing platform alerting, not a claim that this backend sends
-business emails or that a new alert-delivery test was performed during this README review.
-
-## Databases, secrets and operational boundaries
-
-- **MariaDB 11.4.12** runs as one StatefulSet per environment. The main account/session
-  database is `wallet_tracker`; tenant databases use `wallet_tracker_u*`.
-- **Alembic** versions the main and tenant schemas. Argo's migration Sync hook uses the
-  selected application image before the API rollout. Existing unversioned schemas are
-  not silently stamped, and a failed migration blocks deployment.
-- Production schema/activation approvals in `devops/config/environment-state.json`
-  are operator-reviewed inputs. CI cannot issue its own approval, reset financial data
-  or reinterpret old restore receipts as current recovery evidence.
-- **Vault** owns runtime database, RSA/signing, registry and repository credentials.
-  Kubernetes receives filtered outputs through VSO; CI uses short-lived scoped GitLab
-  OIDC tokens. No credentials, private keys, kubeconfig or administrative PAT belong
-  in this repository, image or README.
-- The API runs non-root with a read-only root filesystem, managed key mounts and
-  readiness/liveness probes. NetworkPolicies isolate database access and environments;
-  application logs go to stdout/stderr.
-- Production registration is disabled by default **on the server**. A backend deploy
-  must not silently enable it; the Android registration UI remains available for
-  separately authorized registration windows.
-
-### Persistence and recovery limitations
-
-This is currently a **single-node k3s cluster with local-path storage**, not a highly
-available database platform. A pod restart is different from node or disk loss.
-
-Both MariaDB StatefulSets retain their PVCs when scaled down or deleted. At the verified
-2026-11-08 snapshot, the production database PV has reclaim policy **Retain**, while
-the dev PV has **Delete**. StatefulSet PVC retention does not make manual PVC deletion
-safe, particularly in dev.
-
-There is deliberately **no scheduled WalletTracker database backup in Kubernetes**.
-The estate's Kubernetes backup policy is Vault-only; Vault backups protect secrets,
-not WalletTracker accounts, transactions or tenant databases. Before risky database
-operations, obtain an explicitly approved, consistent recovery plan. Do not recreate
-removed backup schedules or assume historical WalletTracker recovery archives still
-exist.
-
-## Repository layout
-
-```text
-.gitlab/ci.yml              Full backend GitLab pipeline definition
-.gitlab-ci.yml              Minimal GitLab discovery include
-VERSION                     Delivery semantic version
-app/                        Flask API, runtime image and Alembic migrations
-tests/                      Application regression tests
-k8s/dev/                    Development desired state and immutable image reference
-k8s/prod/                   Production desired state and immutable image reference
-k8s/credentials/            VSO-managed Argo repository credential declarations
-argocd/                     Environment and credential Application declarations
-bootstrap/                  Operator-owned namespaces and isolated AppProjects
-devops/ci/                  Image checks, packaging, security and GitOps publication
-devops/kubernetes/          Deterministic manifest generator
-devops/database/            Migration gates and synthetic database checks
-devops/database/sql/        Explicit operator SQL; never automatic approval
-devops/vault/               Scoped credential contract and read-only bootstrap plan
-devops/tests/               Operational regression tests
-devops/config/              Current delivery and environment policy
-devops/records/             Historical, non-secret migration/audit receipts
-bruno/                      API request collections
-```
-
-`devops/records` is historical evidence, **not the active deployment runbook**. Current
-policy is in the CI definition, Argo/Kubernetes declarations and `devops/config`.
-The old AI handoff Markdown documents are intentionally absent; this README is the
-human-facing infrastructure overview.
+| Path | Contents |
+|---|---|
+| `app/`, `tests/` | Flask API, runtime image, Alembic migrations and application regression tests |
+| `.gitlab/ci.yml` | Backend pipeline; the root `.gitlab-ci.yml` includes it |
+| `devops/ci/`, `devops/tests/` | Image validation, security integration, publication and operational regression tests |
+| `k8s/`, `argocd/`, `bootstrap/` | Environment manifests, VSO declarations, Argo Applications and operator-owned bootstrap resources |
+| `devops/database/`, `devops/kubernetes/`, `devops/vault/` | Migration safeguards, manifest generation and scoped credential contracts |
+| `devops/config/`, `VERSION` | Current environment policy and delivery version |
+| `devops/records/` | Historical migration/audit evidence, not the active deployment runbook |
+| `bruno/` | API request collections |
 
 ## Local checks
 
-Use Python 3.12+ and `uv`; keep virtual environments inside the repository. Application
-tests use isolated fixtures, while the CI MariaDB/image checks create disposable
-synthetic databases. Do not point those checks at a live dev or production database.
+Use Python 3.12+ and `uv`, with virtual environments inside the repository.
 
 ```sh
 cd app
@@ -412,28 +129,6 @@ python3 -m unittest discover -s devops/tests -p 'test_*.py'
 python3 -m devops.kubernetes.render_manifests --check
 ```
 
-The registration override above applies only to that test process. Running the real
-API requires an authorized, automatically injected **development** identity; do not
-copy production secrets or generate replacement production keys to make it start.
-
-## What happened to Terraform and Jenkins?
-
-The earlier architecture used Terraform to provision native Proxmox API/database
-guests, Jenkins for delivery, and dedicated native tunnel processes. That is
-**historical infrastructure**, not the current deployment path.
-
-Jenkins LXC **100**, native API LXC **101** and native database LXC **102** were retired
-after the Kubernetes cutover. Their Terraform/Jenkins deployment files and dedicated
-connectors were removed. They are not running and must not be recreated by replaying
-an old `terraform apply` or restoring a legacy writer against current financial data.
-
-Proxmox still matters because it hosts the supporting services listed above. However,
-this repository no longer provisions Proxmox guests or applies Terraform during CI:
-application delivery is now **GitLab CI → Harbor → GitOps → ArgoCD → Kubernetes**.
-
-```mermaid
-flowchart LR
-    Legacy["Historical: Terraform-provisioned API/DB LXCs<br/>Jenkins and dedicated native tunnels"] --> Cutover["Verified Kubernetes cutover<br/>Retire guests 100 / 101 / 102"]
-    Cutover --> Current["Current: GitLab CI / SonarQube / Dependency-Track<br/>Harbor / ArgoCD / k3s / Vault-VSO"]
-    Current --> Operations["Shared Cloudflare routing<br/>Alloy / Loki / Prometheus / Grafana / Keycloak"]
-```
+The registration override applies only to the test process. Running the API itself
+requires an authorized, automatically injected development identity; do not copy
+production secrets or point synthetic migration/image tests at live databases.
