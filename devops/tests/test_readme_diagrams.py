@@ -1,4 +1,4 @@
-"""Keep the portfolio diagrams aligned with real integrations, not generic boxes."""
+"""Keep the technology overview connected, concise and faithful to delivery policy."""
 import pathlib
 import re
 import unittest
@@ -11,56 +11,63 @@ class PortfolioDiagramTests(unittest.TestCase):
         cls.readme = (cls.root / 'README.md').read_text()
         cls.diagrams = re.findall(r'```mermaid\n(.*?)\n```', cls.readme, re.DOTALL)
 
-    def test_delivery_runtime_observability_and_history_have_separate_diagrams(self):
-        self.assertEqual(len(self.diagrams), 7)
-        for diagram in self.diagrams:
-            self.assertTrue(diagram.startswith('flowchart '))
+    def test_one_end_to_end_diagram_followed_by_responsibility_table(self):
+        self.assertEqual(len(self.diagrams), 1)
+        self.assertTrue(self.diagrams[0].startswith('flowchart '))
+        diagram_end = self.readme.index('\n```', self.readme.index('```mermaid'))
+        table_start = self.readme.index('| Area | Technology |')
+        self.assertGreater(table_start, diagram_end)
 
-    def test_both_security_integrations_are_explicit_and_connected(self):
-        delivery = '\n'.join(self.diagrams[:2])
-        for name in ('SonarQube', 'Dependency-Track', 'Syft', 'CycloneDX', 'security-gates'):
-            self.assertIn(name, delivery)
-        self.assertIn('Syft --> DependencyTrack', delivery)
-        self.assertIn('SonarQube -->|"Quality gate passed"| SecurityGate', delivery)
-        self.assertIn('DependencyTrack -->|"SBOM processing completed"| SecurityGate', delivery)
-        self.assertIn('SecurityGate --> Publish', delivery)
+    def test_source_ci_security_and_publication_are_connected(self):
+        diagram = self.diagrams[0]
+        for edge in ('Developer[', 'GitLab --> CI', 'CI --> SonarQube',
+                     'Syft --> DependencyTrack', 'SonarQube --> Gate',
+                     'DependencyTrack --> Gate', 'Gate --> Publish'):
+            self.assertIn(edge, diagram)
+        for technology in ('GitHub', 'Docker / DinD', 'Syft / CycloneDX',
+                           'SonarQube', 'Dependency-Track', 'Harbor'):
+            self.assertIn(technology, diagram)
+        self.assertIn('not automatic CI or deployment failover', self.readme)
+        self.assertIn('SHA-256', self.readme)
 
-    def test_provenance_oidc_gitops_and_rollout_proof_are_not_hidden(self):
-        delivery = '\n'.join(self.diagrams[:2])
-        for name in ('SHA-256', 'GitLab OIDC', 'CI_JOB_TOKEN', 'Harbor', 'Kustomize',
-                     'AppProjects', 'MigrationHook', 'RolloutProof', 'GitHub', 'protected vX.Y.Z'):
-            self.assertIn(name, delivery)
+    def test_gitops_image_and_rollout_flows_are_distinct(self):
+        diagram = self.diagrams[0]
+        for edge in ('Publish -->|"Push image"| Harbor',
+                     'Publish -->|"Commit image reference"| GitOps',
+                     'GitOps -->|"CI refresh webhook"| ArgoCD',
+                     'Harbor -->|"Pull image"| Workloads',
+                     'ArgoCD -->|"Dev auto / prod manual"| Workloads'):
+            self.assertIn(edge, diagram)
+        for name in ('Kustomize', 'Alembic', 'Kubernetes / k3s', 'MariaDB'):
+            self.assertIn(name, diagram)
+        self.assertIn('protected `vX.Y.Z`', self.readme)
 
-    def test_runtime_shows_both_environments_and_all_secret_consumers(self):
-        runtime = '\n'.join(self.diagrams[2:4])
-        for name in ('wallettracker-dev', 'wallettracker-prod', 'MariaDB', 'VSO',
-                     'DevSecrets', 'ProdSecrets', 'PullSecrets', 'RepoSecret',
-                     'TunnelSecret', 'local-path', 'VaultBackup'):
-            self.assertIn(name, runtime)
-        self.assertIn('VSO --> DevSecrets', runtime)
-        self.assertIn('VSO --> ProdSecrets', runtime)
+    def test_secrets_cover_ci_and_runtime_without_literal_credentials(self):
+        diagram = self.diagrams[0]
+        for name in ('HashiCorp Vault', 'Vault Secrets Operator', 'CI secrets / OIDC'):
+            self.assertIn(name, diagram)
+        for edge in ('Vault -.', 'VSO -. "Application secrets" .-> Workloads',
+                     'VSO -. "DB credentials" .-> MariaDB'):
+            self.assertIn(edge, diagram)
+        self.assertIn('Private keys and passwords stay out of Git and images', self.readme)
 
-    def test_observability_includes_logs_metrics_alerting_and_actual_sso(self):
-        operations = '\n'.join(self.diagrams[4:6])
-        for name in ('Alloy', 'Loki', 'Prometheus', 'Grafana', 'kube-state-metrics',
-                     'node-exporter', 'cAdvisor', 'Freelens', 'Vault Agent',
-                     'Keycloak', 'MailRelay', 'MailGateway'):
-            self.assertIn(name, operations)
-        self.assertRegex(operations, r'Keycloak(?:\[[^\n]+\])? --> Grafana')
-        self.assertIn('Keycloak --> GitLabSSO', operations)
-        self.assertIn('Keycloak --> ProxmoxSSO', operations)
-        self.assertNotIn('Keycloak --> Argo', operations)
-        self.assertIn('not financial KPIs', self.readme)
+    def test_public_and_internal_routes_remain_separate(self):
+        diagram = self.diagrams[0]
+        self.assertIn('Cloudflare -->|"Production Service"| Workloads', diagram)
+        self.assertIn('Nginx -->|"Development Service"| Workloads', diagram)
+        self.assertIn('Internal proxy / TLS certs', diagram)
+        self.assertIn('Databases and development are not publicly exposed', self.readme)
 
-    def test_public_and_internal_traffic_target_the_correct_environment(self):
-        runtime = self.diagrams[2]
-        self.assertIn('Tunnel -->|"Cluster-local HTTP origin :5000"| ProdService', runtime)
-        self.assertIn('NPM -->|"HTTP to Malza NodePort 31410"| DevService', runtime)
-        self.assertNotIn('Tunnel --> DevService', runtime)
+    def test_logs_flow_through_alloy_loki_and_grafana(self):
+        diagram = self.diagrams[0]
+        for edge in ('Workloads -->|"stdout / stderr"| Alloy',
+                     'MariaDB -->|"stdout / stderr"| Alloy',
+                     'Alloy --> Loki', 'Loki --> Grafana'):
+            self.assertIn(edge, diagram)
+        self.assertIn('not custom business analytics or distributed tracing', self.readme)
 
-    def test_retired_tools_are_not_presented_as_current_delivery(self):
-        current = '\n'.join(self.diagrams[:6])
-        self.assertNotIn('Terraform', current)
-        self.assertNotIn('Jenkins', current)
-        self.assertIn('Historical: Terraform', self.diagrams[6])
-        self.assertIn('Jenkins', self.diagrams[6])
+    def test_overview_avoids_inventory_and_out_of_scope_services(self):
+        for omitted in ('Proxmox', 'LXC', 'Malza', '10.2.', 'NodePort', 'Keycloak',
+                        'mail-gateway', 'Prometheus', 'AdGuard', 'Terraform', 'Jenkins'):
+            self.assertNotIn(omitted.lower(), self.readme.lower())
+        self.assertIn('no scheduled\n  WalletTracker database backup', self.readme)
