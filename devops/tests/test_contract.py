@@ -3,10 +3,10 @@ from devops.vault.vault_contract import contract
 from devops.kubernetes.render_manifests import resources
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 class DeliveryContract(unittest.TestCase):
-    def test_active_delivery_contract_keeps_android_on_github(self):
+    def test_active_delivery_contract_keeps_android_on_gitlab(self):
         plan=json.loads((ROOT/'devops/config/delivery.json').read_text())
         self.assertEqual(plan['ci_owner'],'gitlab')
-        self.assertEqual(plan['android']['ci_owner'],'github')
+        self.assertEqual(plan['android']['ci_owner'],'gitlab')
         self.assertFalse(plan['production']['automatic'])
     def test_gitlab_owns_ci_and_github_does_not_run_duplicate_jobs(self):
         workflow=(ROOT/'.gitlab/ci.yml').read_text()
