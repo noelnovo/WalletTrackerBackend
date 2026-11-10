@@ -9,6 +9,9 @@ depends_on = None
 
 def upgrade():
     from alembic import op
+    op.create_table('AppProperty',
+                    sa.Column('key', sa.String(64), primary_key=True),
+                    sa.Column('value', sa.JSON, nullable=False))
     table = sa.Table('AppProperty', sa.MetaData(), sa.Column('key', sa.String(64), primary_key=True),
                      sa.Column('value', sa.JSON, nullable=False), autoload_with=op.get_bind())
     op.get_bind().execute(table.insert(), [
