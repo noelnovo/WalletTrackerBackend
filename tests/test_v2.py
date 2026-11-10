@@ -135,6 +135,106 @@ def test_duplicate_names_ignore_case_and_whitespace(v2):
     assert client.post('/api/v2/sync', headers=headers, json={'operations': [operation('bill', payload=payload)]}).status_code == 400
 
 
+def debt_payload(**changes):
+    base = dict(person_id='pending', person='Alex', amount_minor=1500, currency='EUR',
+                date='2026-11-05', description='', paid=False)
+    base.update(changes)
+    return base
+
+
+def test_person_and_debt_round_trip_mark_paid_and_pull(v2):
+    client, headers, _ = v2
+    def push(item):
+        response = client.post('/api/v2/sync', headers=headers, json={'operations': [item]})
+        assert response.status_code == 200
+        return response.get_json()['results'][0]
+    person_id = push(operation('person', payload={'name': 'Alex'}))['record']['id']
+    op = operation('debt', payload=debt_payload(person_id=person_id))
+    stored = push(op)['record']['payload']
+    assert stored['person'] == 'Alex' and stored['paid'] is False
+    assert stored['description'] == '' and stored['paid_date'] == ''
+    push(dict(op, operation_id=uid(), base_version=1, payload=debt_payload(person_id=person_id, paid=True, paid_date='2026-11-10')))
+    records = client.get('/api/v2/sync', headers=headers).get_json()['records']
+    assert {record['kind'] for record in records} == {'person', 'debt'}
+    assert [record for record in records if record['kind'] == 'debt'][0]['payload']['paid'] is True
+
+
+def test_debt_rejects_unknown_or_deleted_person(v2):
+    client, headers, _ = v2
+    def push(item):
+        return client.post('/api/v2/sync', headers=headers, json={'operations': [item]})
+    person = push(operation('person', payload={'name': 'Alex'})).get_json()['results'][0]['record']
+    assert push(operation('debt', payload=debt_payload(person_id=uid()))).status_code == 400
+    deleted = push(dict(operation('person', payload={'name': 'Alex'}, id=person['id']), base_version=1, deleted=True))
+    assert deleted.get_json()['results'][0]['record']['deleted'] is True
+    assert push(operation('debt', payload=debt_payload(person_id=person['id'], person='Alex'))).status_code == 400
+
+
+def test_person_with_active_debts_cannot_be_deleted(v2):
+    client, headers, _ = v2
+    def push(item):
+        response = client.post('/api/v2/sync', headers=headers, json={'operations': [item]})
+        return response.status_code, response.get_json()
+    status, result = push(operation('person', payload={'name': 'Alex'}))
+    person_id = result['results'][0]['record']['id']
+    debt = operation('debt', payload=debt_payload(person_id=person_id))
+    assert push(debt)[0] == 200
+    delete_person = dict(operation('person', payload={'name': 'Alex'}, id=person_id), base_version=1, deleted=True)
+    assert push(delete_person)[0] == 400
+    assert push(dict(debt, operation_id=uid(), base_version=1, deleted=True))[0] == 200
+    status, result = push(dict(delete_person, operation_id=uid()))
+    assert status == 200 and result['results'][0]['record']['deleted'] is True
+
+
+@pytest.mark.parametrize('changes', [
+    dict(person_id='not-a-uuid'), dict(person_id=None), dict(person=''), dict(person='X' * 81),
+    dict(amount_minor=0), dict(amount_minor=True), dict(currency='CHF'), dict(date='2026-13-40'),
+    dict(paid='yes'), dict(paid=True, paid_date='05-11-2026'), dict(description='X' * 256),
+])
+def test_invalid_debts_are_rejected_without_debt_records(v2, changes):
+    client, headers, _ = v2
+    person_id = client.post('/api/v2/sync', headers=headers, json={'operations': [operation('person', payload={'name': 'Alex'})]}).get_json()['results'][0]['record']['id']
+    payload = dict(debt_payload(person_id=person_id), **changes)
+    response = client.post('/api/v2/sync', headers=headers, json={'operations': [operation('debt', payload=payload)]})
+    assert response.status_code == 400
+    records = client.get('/api/v2/sync', headers=headers).get_json()['records']
+    assert all(record['kind'] != 'debt' for record in records)
+
+
+def test_unknown_record_kinds_still_rejected(v2):
+    client, headers, _ = v2
+    for kind in ('invoice', 'loans', ''):
+        assert client.post('/api/v2/sync', headers=headers, json={'operations': [operation(kind, payload={'name': 'X'})]}).status_code == 400
+    assert client.post('/api/v2/sync', headers=headers, json={'operations': [operation('person', payload={'name': ''})]}).status_code == 400
+
+
+def test_properties_require_authentication(client):
+    assert client.get('/api/v2/properties').status_code == 401
+
+
+def test_properties_endpoint_and_dynamic_currencies(v2, app):
+    client, headers, _ = v2
+    listed = client.get('/api/v2/properties', headers=headers).get_json()
+    assert listed['currencies'] == ['EUR', 'USD', 'GBP']
+    assert set(listed['record_kinds']) == {'category', 'expense', 'bill', 'debt', 'person'}
+    # Validation follows the database: a server-added currency passes immediately.
+    with app.app_context():
+        from models.AppProperty import AppProperty
+        from db import db
+        db.session.add(AppProperty(key='currencies', value=['EUR', 'USD', 'GBP']))
+        db.session.add(AppProperty(key='record_kinds', value=['category', 'expense', 'bill', 'debt', 'person']))
+        db.session.commit()
+        row = db.session.get(AppProperty, 'currencies')
+        row.value = ['EUR', 'USD', 'GBP', 'CHF']
+        db.session.commit()
+    payload = dict(amount_minor=100, currency='CHF', date='2026-11-05', description='Trip',
+                   participants=['A', 'B'], paid_by='A')
+    response = client.post('/api/v2/sync', headers=headers, json={'operations': [operation('bill', payload=payload)]})
+    assert response.status_code == 200
+    stored = response.get_json()['results'][0]['record']['payload']
+    assert stored['currency'] == 'CHF'
+
+
 def test_refresh_rotation_replay_and_logout(v2):
     client, headers, tokens = v2
     refreshed = client.post('/api/v2/refresh', json={'refresh_token': tokens['refresh_token']})
