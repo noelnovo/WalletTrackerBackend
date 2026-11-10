@@ -19,9 +19,9 @@ def get_by_id(user_id, session, user, decrypted_data):
         data = decrypted_data
         is_empty(data, ["id"])
         
-        expenseId = data.get('id')
+        expense_id = data.get('id')
 
-        expense = ExpenseRepository.get_by_id(expenseId, session)
+        expense = ExpenseRepository.get_by_id(expense_id, session)
         if not expense:
             return make_response(None, False, ExpenseMessages.NOT_FOUND), 200
         
@@ -44,10 +44,10 @@ def get_by_category(user_id, session, user, decrypted_data):
         data = decrypted_data
         is_empty(data, ["catId"])
         
-        catId = data.get('catId')
-        if not catId:
+        cat_id = data.get('catId')
+        if not cat_id:
             return jsonify({'error': 'Category not provided'}), 403
-        expenses = ExpenseRepository.get_by_category(catId, session)  
+        expenses = ExpenseRepository.get_by_category(cat_id, session)  
         
         response = make_response(expenses, True, ExpenseMessages.FETCHED_PLURAL), 200
         session.remove()
@@ -83,17 +83,17 @@ def create_expense(user_id, session, user, decrypted_data):
         is_empty(data, ["price", "expenseDate", "category"])
 
         price = data.get('price')
-        expenseDate = data.get('expenseDate')
-        catId = data.get('category')
+        expense_date = data.get('expenseDate')
+        cat_id = data.get('category')
         description = data.get('description')
 
-        parsed_date = datetime.strptime(expenseDate, "%Y-%m-%d")
+        parsed_date = datetime.strptime(expense_date, "%Y-%m-%d")
         season = SeasonRepository.get_or_create(parsed_date.year, parsed_date.month, session)
 
         new_expense = Expense(
             price=price,
-            category=catId,
-            expenseDate=expenseDate,
+            category=cat_id,
+            expenseDate=expense_date,
             description=description,
             seasonId=season.id
         )

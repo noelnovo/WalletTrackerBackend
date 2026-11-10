@@ -86,7 +86,7 @@ def generate_keys_file(folder=""):
                 )
             )
     except Exception as e:
-        raise Exception(f"Failed to generate keys: {e}")
+        raise RuntimeError(f"Failed to generate keys: {e}")
     
     
 

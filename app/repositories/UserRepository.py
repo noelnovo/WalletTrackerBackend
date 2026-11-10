@@ -28,7 +28,7 @@ class UserRepository:
 
     @staticmethod
     def check_password(user: User, password: str) -> bool:
-        hex_hashed_password, hex_salt = hash_password(password, user.salt)
+        hex_hashed_password, _ = hash_password(password, user.salt)
         valid = hmac.compare_digest(user.password, hex_hashed_password)
         if valid and not user.salt.startswith("v2:"):
             user.password, user.salt = hash_password(password)

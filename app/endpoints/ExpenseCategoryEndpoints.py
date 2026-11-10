@@ -17,7 +17,7 @@ def get_by_id(user_id, session, user, decrypted_data):
         data = decrypted_data
         is_empty(data, ["id"])
 
-        catId = data.get('id')
+        cat_id = data.get('id')
         
         category = ExpenseCategoryRepository.get_by_id(catId, session)
         if not category:
@@ -81,7 +81,7 @@ def delete(user_id, session, user, decrypted_data):
         data = decrypted_data
         is_empty(data, ["id"])
         
-        catId = data.get('id')
+        cat_id = data.get('id')
 
         ExpenseCategoryRepository.delete_by_id(catId, session)
         session.remove()

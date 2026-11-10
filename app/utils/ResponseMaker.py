@@ -23,7 +23,7 @@ class Response:
             "data": data_value
         }
 
-def make_response(data=None, success=True, message="", exception=None, debug=False):
+def make_response(data=None, success=True, message="", exception=None):
     try:
         log_message = message
         if success:
