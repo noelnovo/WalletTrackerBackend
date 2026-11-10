@@ -19,7 +19,7 @@ def get_by_id(user_id, session, user, decrypted_data):
 
         cat_id = data.get('id')
         
-        category = ExpenseCategoryRepository.get_by_id(catId, session)
+        category = ExpenseCategoryRepository.get_by_id(cat_id, session)
         if not category:
             return make_response(None, False, ExpenseCategoryMessages.NOT_FOUND), 200
 
@@ -83,7 +83,7 @@ def delete(user_id, session, user, decrypted_data):
         
         cat_id = data.get('id')
 
-        ExpenseCategoryRepository.delete_by_id(catId, session)
+        ExpenseCategoryRepository.delete_by_id(cat_id, session)
         session.remove()
         
         return make_response(None, True, ExpenseCategoryMessages.DELETED), 200
