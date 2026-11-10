@@ -208,6 +208,33 @@ def test_unknown_record_kinds_still_rejected(v2):
     assert client.post('/api/v2/sync', headers=headers, json={'operations': [operation('person', payload={'name': ''})]}).status_code == 400
 
 
+def test_properties_require_authentication(client):
+    assert client.get('/api/v2/properties').status_code == 401
+
+
+def test_properties_endpoint_and_dynamic_currencies(v2, app):
+    client, headers, _ = v2
+    listed = client.get('/api/v2/properties', headers=headers).get_json()
+    assert listed['currencies'] == ['EUR', 'USD', 'GBP']
+    assert set(listed['record_kinds']) == {'category', 'expense', 'bill', 'debt', 'person'}
+    # Validation follows the database: a server-added currency passes immediately.
+    with app.app_context():
+        from models.AppProperty import AppProperty
+        from db import db
+        db.session.add(AppProperty(key='currencies', value=['EUR', 'USD', 'GBP']))
+        db.session.add(AppProperty(key='record_kinds', value=['category', 'expense', 'bill', 'debt', 'person']))
+        db.session.commit()
+        row = db.session.get(AppProperty, 'currencies')
+        row.value = ['EUR', 'USD', 'GBP', 'CHF']
+        db.session.commit()
+    payload = dict(amount_minor=100, currency='CHF', date='2026-11-05', description='Trip',
+                   participants=['A', 'B'], paid_by='A')
+    response = client.post('/api/v2/sync', headers=headers, json={'operations': [operation('bill', payload=payload)]})
+    assert response.status_code == 200
+    stored = response.get_json()['results'][0]['record']['payload']
+    assert stored['currency'] == 'CHF'
+
+
 def test_refresh_rotation_replay_and_logout(v2):
     client, headers, tokens = v2
     refreshed = client.post('/api/v2/refresh', json={'refresh_token': tokens['refresh_token']})

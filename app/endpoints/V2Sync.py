@@ -7,7 +7,9 @@ from datetime import date
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import select
 from endpoints.V2Auth import authenticated, json_object
+from db import db
 from models.Sync import SyncClock, SyncRecord, SyncReceipt
+from server_properties import currencies as server_currencies
 from utils.Multitenant import get_tenant_session
 
 v2sync = Blueprint('v2sync', __name__, url_prefix='/api/v2')
@@ -31,7 +33,7 @@ def label(value, maximum=255):
     return value.strip()
 
 
-def validate_payload(kind, payload, session):
+def validate_payload(kind, payload, session, currencies=None):
     if not isinstance(payload, dict):
         raise ValueError('Expected an object payload')
     if kind == 'category':
@@ -40,9 +42,10 @@ def validate_payload(kind, payload, session):
         return {'name': label(payload.get('name'), 80)}
     if kind not in ('expense', 'bill', 'debt'):
         raise ValueError('Unknown record kind')
+    allowed_currencies = currencies if currencies else ('EUR', 'USD', 'GBP')
     amount = integer(payload.get('amount_minor'), 1, 99999999999)
     currency = payload.get('currency', 'EUR')
-    if currency not in ('EUR', 'USD', 'GBP'):
+    if currency not in allowed_currencies:
         raise ValueError('Unsupported currency')
     day = payload.get('date')
     if not isinstance(day, str) or date.fromisoformat(day).isoformat() != day:
@@ -173,7 +176,7 @@ def ensure_person_empty(session, record_id):
         raise ValueError('Move or delete the person\'s debts first')
 
 
-def write_record(session, clock, mutation, row):
+def write_record(session, clock, mutation, row, currencies=None):
     if mutation.deleted and mutation.kind == 'category':
         ensure_category_empty(session, mutation.record_id)
     if mutation.deleted and mutation.kind == 'person':
@@ -181,7 +184,7 @@ def write_record(session, clock, mutation, row):
     if mutation.deleted:
         payload = row.payload if row else {}
     else:
-        payload = validate_payload(mutation.kind, mutation.payload, session)
+        payload = validate_payload(mutation.kind, mutation.payload, session, currencies)
     clock.revision += 1
     if not row:
         row = SyncRecord(id=mutation.record_id, kind=mutation.kind)
@@ -194,7 +197,7 @@ def write_record(session, clock, mutation, row):
     return {'operation_id': mutation.operation_id, 'status': 'applied', 'record': row.public()}
 
 
-def apply_mutation(session, clock, operation):
+def apply_mutation(session, clock, operation, currencies=None):
     mutation = validate_mutation(operation)
     receipt = session.get(SyncReceipt, mutation.operation_id)
     if receipt:
@@ -206,10 +209,17 @@ def apply_mutation(session, clock, operation):
     if current_version != mutation.expected or (row and row.kind != mutation.kind):
         result = {'operation_id': mutation.operation_id, 'status': 'conflict', 'remote': row.public() if row else None}
     else:
-        result = write_record(session, clock, mutation, row)
+        result = write_record(session, clock, mutation, row, currencies)
     session.add(SyncReceipt(id=mutation.operation_id, digest=mutation.fingerprint, result=result))
     session.flush()
     return result
+
+
+@v2sync.get('/properties')
+@authenticated
+def properties():
+    from server_properties import read
+    return jsonify(**read(db.session))
 
 
 @v2sync.get('/sync')
@@ -246,7 +256,8 @@ def push():
     try:
         # A tenant-local clock serializes writers and gives a commit-ordered cursor.
         clock = session.execute(select(SyncClock).where(SyncClock.id == 1).with_for_update()).scalar_one()
-        results = [apply_mutation(session, clock, operation) for operation in operations]
+        allowed = server_currencies(db.session)
+        results = [apply_mutation(session, clock, operation, allowed) for operation in operations]
         session.commit()
         return jsonify(results=results)
     except (ValueError, TypeError, AttributeError) as error:
