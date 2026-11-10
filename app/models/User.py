@@ -4,7 +4,7 @@ from models.BaseModel import BaseModel
 class User(db.Model, BaseModel):
     __tablename__ = "User"
 
-    #TODO uses int in sqlite but bigint in mysql (testing uses sqlite)
+    # Uses int in sqlite but bigint in mysql (testing uses sqlite)
     id = db.Column(db.Integer().with_variant(db.BigInteger, "mysql"), primary_key=True, autoincrement=True)
     username = db.Column(db.String(255), nullable=False, unique=True)
     password = db.Column(db.String(255), nullable=False)

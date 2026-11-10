@@ -25,9 +25,8 @@ class BaseModel:
     
     def edit(self, **kwargs):
         for key, value in kwargs.items():
-            if hasattr(self, key):
-                if key != "id" and key != "username":
-                    setattr(self, key, value)
+            if hasattr(self, key) and key not in ("id", "username"):
+                setattr(self, key, value)
         
     @classmethod
     def get_all(cls):
