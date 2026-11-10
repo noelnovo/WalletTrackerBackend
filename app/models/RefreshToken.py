@@ -6,7 +6,7 @@ from utils.TZDateTime import TZDateTime
 class RefreshToken(db.Model, BaseModel):
     __tablename__ = "RefreshToken"
 
-    #TODO uses int in sqlite but bigint in mysql (testing uses sqlite)
+    # Uses int in sqlite but bigint in mysql (testing uses sqlite)
     id = db.Column(db.Integer().with_variant(db.BigInteger, "mysql"), primary_key=True, autoincrement=True)
     jti = db.Column(db.String(36), nullable=False, unique=True)
     user_id = db.Column(db.Integer().with_variant(db.BigInteger, "mysql"), db.ForeignKey('User.id'), nullable=False)
