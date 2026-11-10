@@ -15,7 +15,7 @@ else:raise SystemExit('Synthetic MariaDB service did not become ready')
 main();engine=get_engine(name)
 with engine.begin() as c:c.execute(text('CREATE DATABASE IF NOT EXISTS `'+name+'_u9999`'))
 engine.dispose();main();main()
-for db,tables in [(name,{'User','RefreshToken','ApiSession','RefreshGrant','RateBucket','alembic_version'}),(name+'_u9999',{'Expense','ExpenseCategory','Importe','Season','SyncClock','SyncRecord','SyncReceipt','alembic_version'})]:
+for db,tables in [(name,{'User','RefreshToken','ApiSession','RefreshGrant','RateBucket','AppProperty','alembic_version'}),(name+'_u9999',{'Expense','ExpenseCategory','Importe','Season','SyncClock','SyncRecord','SyncReceipt','alembic_version'})]:
     e=get_engine(db);assert set(inspect(e).get_table_names())==tables;e.dispose()
 # A real API registration must create a versioned tenant that survives the next
 # full deployment migration. No mocks, copied production data or stamp-head fix.
