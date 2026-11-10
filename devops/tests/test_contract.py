@@ -15,7 +15,9 @@ class DeliveryContract(unittest.TestCase):
         self.assertIn('publish-dev:',workflow)
         self.assertIn('python3 -m devops.ci.security_scan',workflow)
         self.assertFalse((ROOT/'.github/workflows/backend.yml').exists())
-        self.assertEqual((ROOT/'.gitlab-ci.yml').read_text(),'include:\n  - local: .gitlab/ci.yml\n')
+        root=json.loads((ROOT/'.gitlab-ci.yml').read_text())
+        self.assertEqual(set(root),{'include'})
+        self.assertEqual(root['include'][0]['local'],'.gitlab/ci.yml')
 
     def test_open_release_mr_does_not_suppress_long_lived_branch_delivery(self):
         workflow=(ROOT/'.gitlab/ci.yml').read_text()

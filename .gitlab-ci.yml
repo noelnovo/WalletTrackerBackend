@@ -1,2 +1,16 @@
-include:
-  - local: .gitlab/ci.yml
+{
+  "include": [
+    {
+      "local": ".gitlab/ci.yml",
+      "rules": [
+        {"if": "$VAULT_LAYOUT_PROOF_ONLY == null || $VAULT_LAYOUT_PROOF_ONLY == \"\""}
+      ]
+    },
+    {
+      "local": ".gitlab/vault-layout-proof.yml",
+      "rules": [
+        {"if": "$VAULT_LAYOUT_PROOF_ONLY == \"true\" && $CI_PROJECT_ID == \"1\" && $CI_PROJECT_NAMESPACE == \"downops\" && $CI_COMMIT_BRANCH == \"dev\" && $CI_COMMIT_REF_PROTECTED == \"true\" && ($CI_PIPELINE_SOURCE == \"api\" || $CI_PIPELINE_SOURCE == \"web\")"}
+      ]
+    }
+  ]
+}

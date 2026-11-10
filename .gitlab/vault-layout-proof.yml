@@ -1,0 +1,28 @@
+{
+  "stages": ["test"],
+  "workflow": {
+    "rules": [
+      {"if": "$VAULT_LAYOUT_PROOF_ONLY == \"true\" && $CI_PROJECT_ID == \"1\" && $CI_PROJECT_NAMESPACE == \"downops\" && $CI_COMMIT_BRANCH == \"dev\" && $CI_COMMIT_REF_PROTECTED == \"true\" && ($CI_PIPELINE_SOURCE == \"api\" || $CI_PIPELINE_SOURCE == \"web\")"},
+      {"when": "never"}
+    ]
+  },
+  "vault-layout-auth-proof": {
+    "stage": "test",
+    "image": "python:3.13-alpine",
+    "before_script": [],
+    "after_script": [],
+    "services": [],
+    "needs": [],
+    "dependencies": [],
+    "cache": [],
+    "interruptible": false,
+    "timeout": "2 minutes",
+    "resource_group": "wallettracker-vault-layout-proof",
+    "id_tokens": {"VAULT_ID_TOKEN": {"aud": "https://vault.int.downops.win"}},
+    "rules": [
+      {"if": "$VAULT_LAYOUT_PROOF_ONLY == \"true\" && $CI_PROJECT_ID == \"1\" && $CI_PROJECT_NAMESPACE == \"downops\" && $CI_COMMIT_BRANCH == \"dev\" && $CI_COMMIT_REF_PROTECTED == \"true\" && ($CI_PIPELINE_SOURCE == \"api\" || $CI_PIPELINE_SOURCE == \"web\")", "when": "manual", "allow_failure": false},
+      {"when": "never"}
+    ],
+    "script": ["python3 -m devops.ci.vault_layout_proof"]
+  }
+}
