@@ -5,6 +5,6 @@
   "branches": {"dev": "dev", "production": "main"},
   "dev": {"namespace": "wallettracker-dev", "automatic": true, "path": "k8s/dev"},
   "production": {"namespace": "wallettracker-prod", "automatic": false, "path": "k8s/prod", "requires": "reviewed dev-to-main release, protected version tag and manual publication/sync"},
-  "android": {"ci_owner": "github", "repository": "noelnovo/WalletTracker", "changed": false},
+  "android": {"ci_owner": "gitlab", "repository": "downops/wallet-tracker-android", "changed": false},
   "tooling": {"ci": "devops/ci", "kubernetes": "devops/kubernetes", "database": "devops/database", "vault": "devops/vault", "tests": "devops/tests", "configuration": "devops/config", "historical_receipts": "devops/records"}
 }
