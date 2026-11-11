@@ -1,5 +1,26 @@
 # WalletTracker Backend
 
+## Compatible Android release candidate: 2.2.1
+
+This patch release retains the reviewed 2.2.0 debt/person record validation and
+authenticated server-properties API needed by Android 3.2.0. Production 2.0.0 does
+not implement those record kinds. The release must pass its own tests and fresh
+Sonar gate before manual production publication and Argo sync.
+Owner-created protected `vX.Y.Z-ci-check.N` tags may validate the exact candidate
+before integration; their pipelines run real security but cannot publish images
+or change production. Final release tags still require the strict `vX.Y.Z` form.
+
+The existing additive main-schema migration `d2c100000001` creates only the
+`AppProperty` table and initial currency/kind rows. It must not reset/import tenant
+data, change registration defaults, create backups or run destructive downgrades.
+Keep the existing database/PVC, tenant schema, managed keys and credentials.
+
+Security delivery uses checksum-pinned Syft/scanner images, the complete runtime
+CycloneDX without component filtering, environment-only scanner authentication,
+and exact-analysis verification of all configured new/overall DT conditions.
+Android's scanner/signing role contracts belong to project31; the old combined
+branch-scanner/production-keystore grant must not be bootstrapped from this repo.
+
 The Python API behind [WalletTracker](https://github.com/noelnovo/WalletTracker),
 with database migrations and a complete container-based delivery workflow.
 

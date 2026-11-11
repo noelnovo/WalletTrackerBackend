@@ -91,12 +91,12 @@ security-gates:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: never
-    - if: '$CI_COMMIT_REF_PROTECTED == "true" && ($CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/)'
+    - if: '$CI_COMMIT_REF_PROTECTED == "true" && ($CI_COMMIT_BRANCH == "dev" || $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+(-ci-check\.[1-9][0-9]*)?$/)'
   script:
     - python3 -m devops.ci.package_image --verify
     - docker load -i devops/artifacts/backend-image.tar
     - cp devops/artifacts/backend-image.tar wallettracker-ci.tar
-    - docker run --rm -v "$CI_PROJECT_DIR:/workspace:ro" anchore/syft docker-archive:/workspace/wallettracker-ci.tar -o cyclonedx-json | jq '.specVersion = "1.5" | ."$schema" = "http://cyclonedx.org/schema/bom-1.5.schema.json" | .components |= map(select(.type == "library"))' > bom.json
+    - docker run --rm -v "$CI_PROJECT_DIR:/workspace:ro" anchore/syft@sha256:03215d0e98b661d0ecbc8575dbc14d65be1743b5de5df6410aecb7e80f95b060 docker-archive:/workspace/wallettracker-ci.tar -o cyclonedx-json > bom.json
     - python3 -m devops.ci.security_scan
 
 publish-dev:

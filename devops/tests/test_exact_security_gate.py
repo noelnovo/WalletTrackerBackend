@@ -1,0 +1,39 @@
+"""Synthetic exact-analysis verification; no service credentials or requests."""
+import pathlib
+import tempfile
+import unittest
+from unittest.mock import patch
+from devops.ci import security_scan as subject
+
+
+class ExactGateTests(unittest.TestCase):
+    def test_check_tags_scan_but_do_not_authorize_production_publication(self):
+        root=pathlib.Path(__file__).resolve().parents[2]
+        ci=(root/'.gitlab/ci.yml').read_text()
+        self.assertIn('-ci-check',ci.split('security-gates:',1)[1].split('publish-dev:',1)[0])
+        self.assertNotIn('-ci-check',ci.split('publish-prod:',1)[1])
+        self.assertNotIn('map(select(.type',ci)
+        self.assertIn("'--entrypoint','sonar-scanner'",(root/'devops/ci/security_scan.py').read_text())
+
+    def test_exact_project_all_dt_conditions_and_current_analysis_required(self):
+        creds={'SONAR_TOKEN':'synthetic-only','SONAR_HOST_URL':'https://example.invalid','SONAR_PROJECT_KEY':'synthetic-project'}
+        wanted={'metric':'dependencytrack_fixed_high','op':'GT','error':'0'}
+        valid={'metricKey':wanted['metric'],'comparator':'GT','errorThreshold':'0','actualValue':'0','status':'OK'}
+        responses=[{'task':{'status':'SUCCESS','componentKey':'synthetic-project','analysisId':'exact-analysis'}},
+                   {'qualityGate':{'name':'synthetic-gate'}},{'conditions':[wanted]},
+                   {'projectStatus':{'status':'OK','conditions':[valid]}}]
+        with tempfile.TemporaryDirectory() as directory:
+            report=pathlib.Path(directory)/'report-task.txt';report.write_text('ceTaskId=exact-task\n')
+            with patch.object(subject,'request',side_effect=responses) as call:
+                subject.verify_exact_gate(creds,report)
+                self.assertIn('analysisId=exact-analysis',call.call_args.args[0])
+            for bad in [{},dict(valid,status='ERROR'),dict(valid,actualValue='NaN'),dict(valid,errorThreshold='1')]:
+                changed=responses[:-1]+[{'projectStatus':{'status':'OK','conditions':[bad] if bad else []}}]
+                with patch.object(subject,'request',side_effect=changed),self.assertRaises(RuntimeError):
+                    subject.verify_exact_gate(creds,report)
+            changed=[{'task':{'status':'SUCCESS','componentKey':'unrelated-project','analysisId':'other'}}]
+            with patch.object(subject,'request',side_effect=changed),self.assertRaises(RuntimeError):
+                subject.verify_exact_gate(creds,report)
+
+
+if __name__=='__main__':unittest.main()
