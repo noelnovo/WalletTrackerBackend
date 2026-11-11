@@ -56,7 +56,10 @@ def main(env):
         if data.get('images')!=[{'name':IMAGE,'newTag':tag}]:
             data['images']=[{'name':IMAGE,'newTag':tag}];file.write_text(json.dumps(data,indent=2)+'\n')
             command(['git','config','user.name','WalletTracker GitOps CI']);command(['git','config','user.email','wallettracker-ci@downops.invalid']);command(['git','add',str(file)])
-            command(['git','commit','-m','[gitops '+env+'] '+tag+' [skip ci]']);revision=command(['git','rev-parse','HEAD']);command(['git','-c','credential.helper=','push','-o','ci.skip',remote,'HEAD:'+branch],child)
+            # The push option plus workflow's GitOps guard suppress recursive
+            # branch delivery. A commit-level skip marker would ALSO prevent
+            # required release-MR validation at this legitimate delivered tip.
+            command(['git','commit','-m','[gitops '+env+'] '+tag]);revision=command(['git','rev-parse','HEAD']);command(['git','-c','credential.helper=','push','-o','ci.skip',remote,'HEAD:'+branch],child)
         # Refresh always follows authoritative writeback, even if mirror push fails.
         request('https://argocd.int.downops.win/api/webhook','POST',{'object_kind':'push','ref':'refs/heads/'+branch,'project':{'web_url':'https://10.2.0.11/downops/wallet-tracker-backend'},'repository':{'url':'ssh://git@10.2.0.11:2222/downops/wallet-tracker-backend.git'}},{'X-Gitlab-Event':'Push Hook'})
         key=tmp/'github-key';known=tmp/'known_hosts';key.write_text(mirror['SSH_PRIVATE_KEY']);key.chmod(0o600);known.write_text(mirror['KNOWN_HOSTS']);known.chmod(0o600)

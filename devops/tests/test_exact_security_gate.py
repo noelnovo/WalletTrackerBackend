@@ -12,6 +12,10 @@ class ExactGateTests(unittest.TestCase):
         workflow=(root/'.gitlab/ci.yml').read_text().split('default:',1)[0]
         self.assertLess(workflow.index('merge_request_event'),workflow.index('CI_COMMIT_MESSAGE'))
         self.assertIn('when: never',workflow.split('CI_COMMIT_MESSAGE',1)[1])
+        publisher=(root/'devops/ci/publish.py').read_text()
+        commit=next(line for line in publisher.splitlines() if "command(['git','commit'" in line)
+        self.assertNotIn('[skip ci]',commit)
+        self.assertIn("'push','-o','ci.skip'",commit)
 
     def test_check_tags_scan_but_do_not_authorize_production_publication(self):
         root=pathlib.Path(__file__).resolve().parents[2]
