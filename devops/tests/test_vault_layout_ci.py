@@ -13,7 +13,7 @@ import re
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-NORMAL_SHA256 = 'b238b07c277cefe7209d077b292d39676ee051a07786ae11762c425439676417'
+NORMAL_SHA256 = 'f099c60388270a91fb75d53e0b6c4906a286e900470ccec6c40f72a52ef36073'
 
 
 def evaluate(expression, env):
