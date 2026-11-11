@@ -7,6 +7,9 @@ import re
 API_V2 = 'wallettracker-api-v2'
 MAIN_HEAD = 'd2a100000001'
 TENANT_HEAD = 'd2b100000001'
+# The reviewed server-properties migration is a direct additive successor of
+# the already-approved API-v2 baseline. Unknown/future heads stay fail-closed.
+UPGRADED_MAIN_HEADS = frozenset({MAIN_HEAD, 'd2c100000001'})
 
 
 def require_schema_only_approval(path, database_name):
@@ -43,7 +46,7 @@ def version(engine):
 def already_upgraded(get_engine, database_name, get_tenants):
     main = get_engine(database_name)
     try:
-        if version(main) != MAIN_HEAD:
+        if version(main) not in UPGRADED_MAIN_HEADS:
             return False
         for name in get_tenants(main):
             tenant = get_engine(name)

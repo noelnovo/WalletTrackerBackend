@@ -7,6 +7,12 @@ from devops.ci import security_scan as subject
 
 
 class ExactGateTests(unittest.TestCase):
+    def test_release_mr_can_validate_the_current_gitops_writeback_tip(self):
+        root=pathlib.Path(__file__).resolve().parents[2]
+        workflow=(root/'.gitlab/ci.yml').read_text().split('default:',1)[0]
+        self.assertLess(workflow.index('merge_request_event'),workflow.index('CI_COMMIT_MESSAGE'))
+        self.assertIn('when: never',workflow.split('CI_COMMIT_MESSAGE',1)[1])
+
     def test_check_tags_scan_but_do_not_authorize_production_publication(self):
         root=pathlib.Path(__file__).resolve().parents[2]
         ci=(root/'.gitlab/ci.yml').read_text()
