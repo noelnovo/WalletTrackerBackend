@@ -1,6 +1,7 @@
 """Preserve real DT/Sonar gates using scoped job identity, no secret argv/logs."""
 import base64,json,os,pathlib,subprocess,time,urllib.parse
 from devops.ci.ci_access import Vault,request
+PROJECT_KEY='noelpatata_WalletTrackerAPI_0cf0ca12-f6dd-434b-9dbd-b121383d2888'
 def main():
     vault=Vault('wallettracker-ci-scan');dt=vault.read('downops/data/services/dependency-track/clients/instance-001');sonar=vault.read('downops/data/services/sonarqube/clients/instance-001')
     headers={'X-Api-Key':dt['DT_API_KEY']};url=dt['DT_URL'].rstrip('/')
@@ -47,13 +48,14 @@ def main():
 def verify_exact_gate(sonar,report):
     """Never accept cached OK or silently absent overall/new DT metrics."""
     base=sonar['SONAR_HOST_URL'].rstrip('/')
+    project=sonar.get('SONAR_PROJECT_KEY',PROJECT_KEY)
     headers={'Authorization':'Basic '+base64.b64encode((sonar['SONAR_TOKEN']+':').encode()).decode()}
     query=lambda path,values:request(base+path+'?'+urllib.parse.urlencode(values),headers=headers)
     task_values=dict(line.split('=',1) for line in report.read_text().splitlines() if '=' in line)
     task=query('/api/ce/task',{'id':task_values['ceTaskId']})['task']
-    if task.get('status')!='SUCCESS' or task.get('componentKey')!=sonar['SONAR_PROJECT_KEY']:
+    if task.get('status')!='SUCCESS' or task.get('componentKey')!=project:
         raise RuntimeError('Exact candidate analysis is incomplete or belongs to another project')
-    assigned=query('/api/qualitygates/get_by_project',{'project':sonar['SONAR_PROJECT_KEY']})['qualityGate']
+    assigned=query('/api/qualitygates/get_by_project',{'project':project})['qualityGate']
     configured=query('/api/qualitygates/show',{'name':assigned['name']})['conditions']
     expected=[c for c in configured if c['metric'].startswith(('dependencytrack_','new_dependencytrack_'))]
     actual=query('/api/qualitygates/project_status',{'analysisId':task['analysisId']})['projectStatus']

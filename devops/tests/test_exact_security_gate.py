@@ -27,6 +27,10 @@ class ExactGateTests(unittest.TestCase):
             with patch.object(subject,'request',side_effect=responses) as call:
                 subject.verify_exact_gate(creds,report)
                 self.assertIn('analysisId=exact-analysis',call.call_args.args[0])
+            # The existing canonical backend record has only host URL/token;
+            # resolve the non-secret project key from the pinned source mapping.
+            with patch.object(subject,'PROJECT_KEY','synthetic-project'),patch.object(subject,'request',side_effect=responses):
+                subject.verify_exact_gate({k:v for k,v in creds.items() if k!='SONAR_PROJECT_KEY'},report)
             for bad in [{},dict(valid,status='ERROR'),dict(valid,actualValue='NaN'),dict(valid,errorThreshold='1')]:
                 changed=responses[:-1]+[{'projectStatus':{'status':'OK','conditions':[bad] if bad else []}}]
                 with patch.object(subject,'request',side_effect=changed),self.assertRaises(RuntimeError):
